@@ -2,6 +2,18 @@
 
 ## 2025-11-04
 
+### Latest - Enhanced dashboard and single-command launcher
+- Implemented grouped dashboard monitor with functional organization:
+  - SENSORS section: Shows latest data from all sensor ECUs (wheels, engine, steering)
+  - CONTROLLER section: Displays autonomous controller TX (commands sent) and RX (sensor data received)
+  - ACTUATORS section: Shows actuator ECUs receiving commands
+- Added single-command launcher `cargo run`:
+  - Automatically starts all 9 ECUs in background (sensors, controller, actuators)
+  - Suppresses individual ECU logs for clean output
+- Dashboard:
+  - Real-time CAN traffic visualization
+  - Press 'q' to quit and cleanly shutdown all components
+
 ### b6e91423 - inital implementation of autonomous controller
 - Moved original implementation to `basic/` folder
 - Created `autonomous_controller/` project with 9-ECU automotive architecture:

@@ -7,13 +7,13 @@ A realistic CAN bus simulation for autonomous vehicle development and security r
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        CAN BUS SERVER                           │
-│                      (127.0.0.1:9000)                          │
+│                      (127.0.0.1:9000)                           │
 └───────────┬─────────────────────────────────────────┬───────────┘
             │                                         │
-    ┌───────▼────────┐                        ┌──────▼───────┐
-    │  SENSOR LAYER  │                        │ MONITOR      │
-    ├────────────────┤                        │ (Observer)   │
-    │ • 4x Wheel     │                        └──────────────┘
+    ┌───────▼────────┐                         ┌──────▼───────┐
+    │  SENSOR LAYER  │                         │ MONITOR      │
+    ├────────────────┤                         │ (Observer)   │
+    │ • 4x Wheel     │                         └──────────────┘
     │   Speed        │
     │ • Engine ECU   │
     │ • Steering     │
@@ -87,6 +87,22 @@ A realistic CAN bus simulation for autonomous vehicle development and security r
 
 ## Quick Start
 
+### Single Command Launch
+
+```bash
+cd autonomous_controller
+cargo run
+```
+
+This will:
+1. Start the CAN bus server in the background
+2. Launch all 6 sensor ECUs (wheels, engine, steering)
+3. Start the autonomous controller
+4. Launch 2 actuator controllers (brake, steering)
+5. Display a grouped dashboard showing real-time CAN traffic
+
+**Press 'q' to quit** - all components will shut down cleanly.
+
 ### Build All Components
 
 ```bash
@@ -144,26 +160,37 @@ cargo run --bin brake_controller
 cargo run --bin steering_controller
 ```
 
-### Minimal Setup (For Testing)
+## Dashboard Features
 
-For basic testing, you can run a minimal setup:
+The grouped dashboard monitor displays:
 
-```bash
-# Terminal 1: Bus server
-cargo run --bin bus_server
-
-# Terminal 2: Monitor
-cargo run --bin monitor
-
-# Terminal 3: Wheel sensor (just one)
-cargo run --bin wheel_fl
-
-# Terminal 4: Autonomous controller
-cargo run --bin autonomous_controller
-
-# Terminal 5: Brake controller
-cargo run --bin brake_controller
 ```
+SENSORS (Sending):
+  - 4x Wheel Speed Sensors (FL, FR, RL, RR)
+  - Engine ECU (RPM and throttle)
+  - Steering Sensor (angle and torque)
+
+CONTROLLER (Autonomous):
+  → Commands Sent:
+    - Brake commands
+    - Throttle commands
+    - Steering commands
+  ← Sensor Data Received (sample):
+    - Latest wheel speed
+    - Latest engine data
+
+ACTUATORS (Receiving):
+  - Brake Controller
+  - Steering Controller
+```
+
+Each line shows:
+- ECU name
+- CAN ID
+- Decoded message data
+- Timestamp
+
+The display updates in real-time (10 Hz) showing the most current data from each ECU.
 
 ## Data Encoding
 
@@ -192,31 +219,7 @@ cargo run --bin brake_controller
 - Resolution: 0.001 Nm
 - Format: Big-endian u16 ((value + 32) * 1000)
 
-## Security Research Applications
-
-This simulator is designed for V-HSM (Virtual Hardware Security Module) research and demonstrates:
-
-### Attack Surfaces
-1. **Sensor Spoofing**: Inject false wheel speed or steering data
-2. **Command Injection**: Send unauthorized brake/steering commands
-3. **Replay Attacks**: Capture and replay CAN frames
-4. **DoS Attacks**: Flood the bus with messages
-5. **Man-in-the-Middle**: Intercept and modify messages
-
-### Defense Demonstrations
-1. **Message Authentication**: Add CMAC/HMAC to critical messages
-2. **Encryption**: Protect confidential data (planned V-HSM feature)
-3. **Anomaly Detection**: Detect inconsistent sensor data
-4. **Rate Limiting**: Prevent message flooding
-5. **Freshness**: Use sequence numbers or timestamps
-
-### Safety-Critical Scenarios
-- Brake command authentication (prevent unauthorized braking)
-- Steering command validation (prevent sudden maneuvers)
-- Wheel speed anomaly detection (detect sensor attacks)
-- Actuator discrepancy detection (verify command execution)
-
-## Code Structure
+## Structure
 
 ```
 autonomous_controller/
@@ -276,18 +279,5 @@ autonomous_controller/
 - **chrono**: Timestamps
 - **colored**: Terminal colors
 - **crossterm**: Terminal UI
-
-## License
-
-See parent project LICENSE.
-
-## For Researchers
-
-This simulator provides a safe, controlled environment for:
-- Automotive cybersecurity research
-- CAN bus protocol analysis
-- Intrusion detection system testing
-- HSM integration testing
-- ADAS/Autonomous vehicle security
 
 **Note**: This is a simulation. Real automotive systems require ISO 26262 safety validation and extensive testing.
