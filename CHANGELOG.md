@@ -2,6 +2,14 @@
 
 ## 2025-11-05
 
+### Attack Scenario Scripts
+- Added four educational attack scenario scripts for security testing:
+  - `attack_injection`: Demonstrates malicious frame injection (fake sensor data)
+  - `attack_replay`: Captures and replays CAN frames at inappropriate times
+  - `attack_flooding`: Bus flooding/DoS attack with high-volume traffic
+  - `attack_spoofing`: ECU impersonation with malicious control commands
+- Purpose: Test HSM security features and demonstrate CAN bus vulnerabilities
+
 ### Monitor Display Improvements
 - Added raw data column showing 4 blocks of 2 bytes (standard CAN format)
 - Fixed column alignment across all sections
