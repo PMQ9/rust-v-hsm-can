@@ -32,11 +32,11 @@ struct Dashboard {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Setup terminal
+    // Setup terminal - try to enable features but don't fail if unsupported
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-    terminal::enable_raw_mode()?;
-    execute!(stdout, cursor::Hide)?;
+    let use_alternate_screen = execute!(stdout, EnterAlternateScreen).is_ok();
+    let use_raw_mode = terminal::enable_raw_mode().is_ok();
+    let _ = execute!(stdout, cursor::Hide); // Hide cursor if possible
 
     let mut dashboard = Dashboard::new();
 
@@ -78,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     stdout.flush()?;
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    execute!(stdout, terminal::Clear(ClearType::All))?;
+    let _ = execute!(stdout, terminal::Clear(ClearType::All)); // Clear if possible
     dashboard.draw(&mut stdout)?;
 
     // Split the client into reader and writer
@@ -111,11 +111,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let draw_interval = Duration::from_millis(100); // Update display 10 times per second
 
     loop {
-        // Check for user input (q to quit)
-        if event::poll(Duration::from_millis(10))? {
-            if let Event::Key(key_event) = event::read()? {
-                if key_event.code == KeyCode::Char('q') {
-                    break;
+        // Check for user input (q to quit) - only if raw mode is available
+        if use_raw_mode {
+            if let Ok(true) = event::poll(Duration::from_millis(10)) {
+                if let Ok(Event::Key(key_event)) = event::read() {
+                    if key_event.code == KeyCode::Char('q') {
+                        break;
+                    }
                 }
             }
         }
@@ -136,11 +138,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
-    // Cleanup
-    execute!(stdout, cursor::Show)?;
-    terminal::disable_raw_mode()?;
-    execute!(stdout, LeaveAlternateScreen)?;
-    println!("Monitor stopped.");
+    // Cleanup - only if features were enabled
+    let _ = execute!(stdout, cursor::Show);
+    if use_raw_mode {
+        let _ = terminal::disable_raw_mode();
+    }
+    if use_alternate_screen {
+        let _ = execute!(stdout, LeaveAlternateScreen);
+    }
+    println!("\nMonitor stopped.");
 
     Ok(())
 }
@@ -210,13 +216,13 @@ impl Dashboard {
     }
 
     fn draw(&self, stdout: &mut io::Stdout) -> io::Result<()> {
-        // Move to top-left and clear everything
-        execute!(
+        // Move to top-left and clear everything - ignore failures for terminal compatibility
+        let _ = execute!(
             stdout,
             cursor::MoveTo(0, 0),
             terminal::Clear(ClearType::All),
             cursor::Hide
-        )?;
+        );
 
         // Header
         writeln!(stdout, "\r{}", "═══════════════════════════════════════════════════════════════════════════════".cyan().bold())?;
@@ -257,7 +263,7 @@ impl Dashboard {
         self.draw_actuator_line(stdout, can_ids::BRAKE_COMMAND, "BRAKE_CTRL")?;
         self.draw_actuator_line(stdout, can_ids::STEERING_COMMAND, "STEER_CTRL")?;
 
-        execute!(stdout, cursor::Show)?;
+        let _ = execute!(stdout, cursor::Show); // Show cursor if possible
         stdout.flush()?;
         Ok(())
     }

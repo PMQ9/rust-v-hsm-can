@@ -68,17 +68,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         loop {
             match reader.receive_message().await {
                 Ok(NetMessage::SecuredCanFrame(secured_frame)) => {
-                    // Verify MAC and CRC
-                    match secured_frame.verify(&hsm_clone) {
-                        Ok(_) => {
-                            if frame_tx.send(secured_frame).await.is_err() {
-                                break;
+                    // Only verify and process brake command frames
+                    if secured_frame.can_id == can_ids::BRAKE_COMMAND {
+                        // Verify MAC and CRC for frames we care about
+                        match secured_frame.verify(&hsm_clone) {
+                            Ok(_) => {
+                                if frame_tx.send(secured_frame).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("{} Security verification failed: {}", "⚠".yellow().bold(), e);
                             }
                         }
-                        Err(e) => {
-                            eprintln!("{} Security verification failed: {}", "⚠".yellow().bold(), e);
-                        }
                     }
+                    // Silently ignore other frames (sensor data, etc.)
                 }
                 Ok(NetMessage::CanFrame(_)) => {
                     eprintln!("{} Received unencrypted frame - rejecting!", "⚠".yellow().bold());

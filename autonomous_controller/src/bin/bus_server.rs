@@ -6,6 +6,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, Mutex};
 use autonomous_vehicle_sim::network::NetMessage;
 use autonomous_vehicle_sim::types::CanFrame;
+use autonomous_vehicle_sim::hsm::SecuredCanFrame;
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
 const BUFFER_SIZE: usize = 1000;
@@ -20,8 +21,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
     println!("{} Starting bus server on {}...", "→".green(), BUS_ADDRESS.bright_white());
 
-    // Create broadcast channel for CAN frames
-    let (tx, _rx) = broadcast::channel::<CanFrame>(BUFFER_SIZE);
+    // Create broadcast channel for secured CAN frames
+    let (tx, _rx) = broadcast::channel::<SecuredCanFrame>(BUFFER_SIZE);
     let tx = Arc::new(tx);
 
     // Create client map
@@ -58,7 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn handle_client(
     socket: TcpStream,
-    tx: Arc<broadcast::Sender<CanFrame>>,
+    tx: Arc<broadcast::Sender<SecuredCanFrame>>,
     clients: ClientMap,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let peer_addr = socket.peer_addr()?;
@@ -94,15 +95,15 @@ async fn handle_client(
     // Subscribe to CAN frames
     let mut rx = tx.subscribe();
 
-    // Spawn a task to forward CAN frames to this client
+    // Spawn a task to forward secured CAN frames to this client
     let client_name_clone = client_name.clone();
     let clients_clone = Arc::clone(&clients);
     tokio::spawn(async move {
-        while let Ok(frame) = rx.recv().await {
+        while let Ok(secured_frame) = rx.recv().await {
             // Get the write half for this client
             let mut clients_lock = clients_clone.lock().await;
             if let Some(writer) = clients_lock.get_mut(&client_name_clone) {
-                let msg = NetMessage::CanFrame(frame);
+                let msg = NetMessage::SecuredCanFrame(secured_frame);
                 let json = match serde_json::to_string(&msg) {
                     Ok(j) => j,
                     Err(_) => continue,
@@ -135,18 +136,45 @@ async fn handle_client(
         let msg: NetMessage = serde_json::from_str(&line)?;
 
         match msg {
-            NetMessage::CanFrame(frame) => {
+            NetMessage::SecuredCanFrame(secured_frame) => {
                 frame_count += 1;
                 println!(
-                    "  {} Frame #{:04} from {} - ID: 0x{:03X}",
+                    "  {} Frame #{:04} from {} - ID: 0x{:03X} (secured)",
+                    "→".yellow(),
+                    frame_count,
+                    client_name.bright_cyan(),
+                    secured_frame.can_id.value()
+                );
+
+                // Broadcast to all clients
+                if let Err(e) = tx.send(secured_frame) {
+                    eprintln!("{} Failed to broadcast frame: {}", "✗".red(), e);
+                }
+            }
+            NetMessage::CanFrame(frame) => {
+                // Handle legacy unencrypted frames (for backwards compatibility)
+                frame_count += 1;
+                println!(
+                    "  {} Frame #{:04} from {} - ID: 0x{:03X} (unsecured/legacy)",
                     "→".yellow(),
                     frame_count,
                     client_name.bright_cyan(),
                     frame.id.value()
                 );
 
-                // Broadcast to all clients
-                if let Err(e) = tx.send(frame) {
+                // Wrap in a secured frame structure and broadcast
+                // Note: This is a legacy compatibility path
+                let secured_frame = SecuredCanFrame {
+                    can_id: frame.id,
+                    data: frame.data,
+                    source: frame.source,
+                    timestamp: frame.timestamp,
+                    mac: [0u8; 32],  // No MAC for legacy frames
+                    crc: 0,          // No CRC for legacy frames
+                    session_counter: 0,
+                };
+
+                if let Err(e) = tx.send(secured_frame) {
                     eprintln!("{} Failed to broadcast frame: {}", "✗".red(), e);
                 }
             }
