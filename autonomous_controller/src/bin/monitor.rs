@@ -28,6 +28,9 @@ struct Dashboard {
     actuators: HashMap<CanId, LatestFrame>,
     frame_count: u64,
     security_failures: u64,
+    unsecured_frame_count: u64,
+    recent_attackers: Vec<String>, // Track sources of unsecured frames
+    controller_emergency_shutdown: bool, // Controller in emergency shutdown mode
 }
 
 #[tokio::main]
@@ -161,16 +164,40 @@ impl Dashboard {
             actuators: HashMap::new(),
             frame_count: 0,
             security_failures: 0,
+            unsecured_frame_count: 0,
+            recent_attackers: Vec::new(),
+            controller_emergency_shutdown: false,
         }
     }
 
     fn update_frame(&mut self, secured_frame: SecuredCanFrame) {
         self.frame_count += 1;
+
+        // Check if this is an unsecured frame (MAC=0 and CRC=0)
+        if secured_frame.mac == [0u8; 32] && secured_frame.crc == 0 {
+            self.unsecured_frame_count += 1;
+            // Track unique attackers (keep last 5)
+            if !self.recent_attackers.contains(&secured_frame.source) {
+                self.recent_attackers.push(secured_frame.source.clone());
+                if self.recent_attackers.len() > 5 {
+                    self.recent_attackers.remove(0);
+                }
+            }
+        }
+
         let decoded = decode_secured_message(&secured_frame);
         let latest = LatestFrame {
             secured_frame: secured_frame.clone(),
             decoded,
         };
+
+        // Check for emergency shutdown status from controller
+        if secured_frame.can_id == can_ids::AUTO_STATUS {
+            if !secured_frame.data.is_empty() && secured_frame.data[0] == 0xFF {
+                // 0xFF = Emergency Shutdown
+                self.controller_emergency_shutdown = true;
+            }
+        }
 
         // Categorize frame based on CAN ID and source
         match secured_frame.can_id {
@@ -230,11 +257,43 @@ impl Dashboard {
         writeln!(stdout, "\r{}", "          AUTONOMOUS VEHICLE CAN BUS MONITOR                   ".cyan().bold())?;
         writeln!(stdout, "\r{}", "═══════════════════════════════════════════════════════════════════════════════".cyan().bold())?;
         writeln!(stdout, "\r")?;
-        writeln!(stdout, "\r{} Total frames: {} | {} Security: ENABLED | Press 'q' to quit\r",
-            "ℹ".blue(),
-            self.frame_count,
-            "✓".green().bold()
-        )?;
+        // Display security status with attack warnings
+        if self.unsecured_frame_count > 0 {
+            writeln!(stdout, "\r{} Total frames: {} | {} {} | Press 'q' to quit\r",
+                "ℹ".blue(),
+                self.frame_count,
+                "⚠".red().bold(),
+                format!("ATTACK DETECTED: {} unsecured frames", self.unsecured_frame_count).red().bold()
+            )?;
+            if !self.recent_attackers.is_empty() {
+                writeln!(stdout, "\r{} {}\r",
+                    " Attack Source:".red().bold(),
+                    self.recent_attackers.join(", ").red()
+                )?;
+            }
+        } else {
+            writeln!(stdout, "\r{} Total frames: {} | {} Security: ENABLED | Press 'q' to quit\r",
+                "ℹ".blue(),
+                self.frame_count,
+                "✓".green().bold()
+            )?;
+        }
+
+        // Display emergency shutdown warning if controller is stopped
+        if self.controller_emergency_shutdown {
+            writeln!(stdout, "\r")?;
+            writeln!(stdout, "\r{}", "═══════════════════════════════════════════════════════════════════════════════".red().bold())?;
+            writeln!(stdout, "\r{}  {}\r",
+                " ".repeat(15),
+                "⚠ AUTONOMOUS CONTROLLER DEACTIVATED ⚠".red().bold()
+            )?;
+            writeln!(stdout, "\r{}", "═══════════════════════════════════════════════════════════════════════════════".red().bold())?;
+            writeln!(stdout, "\r{} Attack detected - Controller STOPPED for safety | {} to resume\r",
+                " ".repeat(10),
+                "RESTART REQUIRED".yellow().bold()
+            )?;
+            writeln!(stdout, "\r{}", "═══════════════════════════════════════════════════════════════════════════════".red().bold())?;
+        }
         // writeln!(stdout, "\r{} All frames include MAC (HMAC-SHA256) and CRC32 verification\r", "⚡".yellow())?;
         writeln!(stdout, "\r")?;
 

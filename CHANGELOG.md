@@ -2,6 +2,44 @@
 
 ## 2025-11-05
 
+### Attack Fallback - Autonomous Controller Shutdown
+- Implemented automatic controller deactivation when attack is detected
+- **Safe Mode Features**:
+  - Controller STOPS sending all commands (brake, throttle, steering) when attack detected
+  - Continues monitoring sensor inputs but takes NO ACTION
+  - Displays prominent warning with explanation
+  - Requires manual restart to resume operation
+- **Thread-safe attack detection**: Uses AtomicBool for real-time coordination between receiver and control loop
+- **Safety-first design**: Prevents compromised commands from reaching actuators
+- **Launcher enhancement**:
+  - Automatic cleanup of old processes before starting new simulation
+- **Visible shutdown status**:
+  - Controller broadcasts emergency shutdown status on CAN bus (ID 0x400)
+  - Indication that restart is required
+
+### Unsecured Frame Attack Detection
+- Enhanced attack detection to identify frames with MAC=0 as unsecured frame injection attacks
+- **Monitor displays real-time attack**:
+  - Provides immediate visual feedback during injection attacks
+  - Attack type: "Unsecured Frame Injection"
+  - Source ECU identification
+
+### Attack Detection and Error Handling
+- Created comprehensive `error_handling` module with `AttackDetector` for CAN bus security monitoring
+- Implemented intelligent error tolerance with configurable thresholds:
+  - CRC errors: Allow 5 consecutive failures (tolerance for signal degradation/noise)
+  - MAC errors: Allow 3 consecutive failures (stricter for cryptographic failures)
+- Three-tier security state machine: Normal → Warning → Under Attack
+- Automatic error counter reset on successful frame validation (recovery from transient errors)
+
+### Attack Scenario Scripts
+- Added four educational attack scenario scripts for security testing:
+  - `attack_injection`: Demonstrates malicious frame injection (fake sensor data)
+  - `attack_replay`: Captures and replays CAN frames at inappropriate times
+  - `attack_flooding`: Bus flooding/DoS attack with high-volume traffic
+  - `attack_spoofing`: ECU impersonation with malicious control commands
+- Purpose: Test HSM security features and demonstrate CAN bus vulnerabilities
+
 ### Monitor Display Improvements
 - Added raw data column showing 4 blocks of 2 bytes (standard CAN format)
 - Fixed column alignment across all sections

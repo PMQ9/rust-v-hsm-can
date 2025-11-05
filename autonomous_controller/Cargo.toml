@@ -71,3 +71,20 @@ path = "src/bin/brake_controller.rs"
 [[bin]]
 name = "steering_controller"
 path = "src/bin/steering_controller.rs"
+
+# Attack scenarios (for security research and testing)
+[[bin]]
+name = "attack_injection"
+path = "src/bin/attacks/attack_injection.rs"
+
+[[bin]]
+name = "attack_replay"
+path = "src/bin/attacks/attack_replay.rs"
+
+[[bin]]
+name = "attack_flooding"
+path = "src/bin/attacks/attack_flooding.rs"
+
+[[bin]]
+name = "attack_spoofing"
+path = "src/bin/attacks/attack_spoofing.rs"

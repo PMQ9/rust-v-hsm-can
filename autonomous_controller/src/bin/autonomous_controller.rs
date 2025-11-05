@@ -1,6 +1,6 @@
 use colored::*;
 use std::time::Duration;
-use std::collections::HashMap;
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use tokio::sync::mpsc;
 use autonomous_vehicle_sim::network::{BusClient, NetMessage};
 use autonomous_vehicle_sim::types::{can_ids, encoding, VehicleState};
@@ -74,6 +74,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Channel for communication between receiver and control loop
     let (frame_tx, mut frame_rx) = mpsc::channel::<SecuredCanFrame>(100);
 
+    // Attack detection flag (shared between receiver task and control loop)
+    let attack_detected = Arc::new(AtomicBool::new(false));
+    let attack_detected_clone = attack_detected.clone();
+
     // Clone HSM for the receiver task
     let hsm_clone = hsm.clone();
 
@@ -81,10 +85,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tokio::spawn(async move {
         let mut verified_count = 0u64;
         let mut failed_count = 0u64;
+        let mut attack_warning_shown = false;
 
         loop {
             match reader.receive_message().await {
                 Ok(NetMessage::SecuredCanFrame(secured_frame)) => {
+                    // Ignore frames from ourselves (prevent verification loop)
+                    if secured_frame.source == ECU_NAME {
+                        continue;
+                    }
+
                     // Verify MAC and CRC
                     match secured_frame.verify(&hsm_clone) {
                         Ok(_) => {
@@ -95,14 +105,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         }
                         Err(e) => {
                             failed_count += 1;
-                            eprintln!("{} Security verification failed: {}", "⚠".yellow().bold(), e);
-                            eprintln!("  Verified: {}, Failed: {}", verified_count, failed_count);
+
+                            // Check if this is an unsecured frame attack
+                            if e.contains("UNSECURED FRAME") {
+                                // SET ATTACK FLAG - STOP CONTROLLER!
+                                attack_detected_clone.store(true, Ordering::SeqCst);
+
+                                // Only display warning once to prevent flickering
+                                if !attack_warning_shown {
+                                    eprintln!();
+                                    eprintln!("{} {}", "ATTACK DETECTED:".red().bold(), "Unsecured Frame Injection".red());
+                                    eprintln!("  {}", e.red());
+                                    eprintln!("  CAN ID: 0x{:03X}", secured_frame.can_id.value());
+                                    eprintln!("  Frame has NO MAC/CRC - unauthorized ECU on bus!");
+                                    eprintln!("  Verified: {}, Failed: {}", verified_count, failed_count);
+                                    eprintln!("  {} Attack flag set to TRUE - Controller will shutdown", "→".yellow().bold());
+                                    eprintln!("  {} Suppressing further attack messages to prevent spam", "→".yellow());
+                                    eprintln!();
+                                    attack_warning_shown = true;
+                                }
+                            } else {
+                                eprintln!("{} Security verification failed: {}", "⚠".yellow().bold(), e);
+                                eprintln!("  Verified: {}, Failed: {}", verified_count, failed_count);
+                            }
                         }
                     }
                 }
-                Ok(NetMessage::CanFrame(_)) => {
-                    // Legacy unencrypted frame - reject in secure mode
-                    eprintln!("{} Received unencrypted frame - rejecting!", "⚠".yellow().bold());
+                Ok(NetMessage::CanFrame(unsecured_frame)) => {
+                    // Unsecured frame detected - this is a potential attack!
+                    // SET ATTACK FLAG - STOP CONTROLLER!
+                    attack_detected_clone.store(true, Ordering::SeqCst);
+
+                    failed_count += 1;
+
+                    // Only display warning once to prevent flickering
+                    if !attack_warning_shown {
+                        eprintln!();
+                        eprintln!("{} {} ATTACK: Unsecured frame detected!", "⚠️".red().bold(), "SECURITY".red().bold());
+                        eprintln!("  Source: {}", unsecured_frame.source.red());
+                        eprintln!("  CAN ID: 0x{:03X}", unsecured_frame.id.value());
+                        eprintln!("  Frame has NO MAC - potential injection attack!");
+                        eprintln!("  Verified: {}, Failed: {}", verified_count, failed_count);
+                        eprintln!("  {} Suppressing further attack messages to prevent spam", "→".yellow());
+                        eprintln!();
+                        attack_warning_shown = true;
+                    }
                 }
                 Err(_) => break,
                 _ => {}
@@ -112,11 +159,71 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let mut vehicle_state = VehicleState::new();
     let mut counter = 0u32;
+    let mut warning_displayed = false;
 
     loop {
         // Process all available sensor messages (secured)
         while let Ok(secured_frame) = frame_rx.try_recv() {
             update_vehicle_state(&mut vehicle_state, &secured_frame);
+        }
+
+        // CHECK FOR ATTACK - STOP SENDING COMMANDS IF DETECTED
+        let is_under_attack = attack_detected.load(Ordering::SeqCst);
+        if is_under_attack {
+            // Display warning message once and broadcast shutdown status
+            if !warning_displayed {
+                eprintln!();
+                eprintln!("{}", "═══════════════════════════════════════════════════════".red().bold());
+                eprintln!("{}", "   AUTONOMOUS CONTROLLER DEACTIVATED            ".red().bold());
+                eprintln!("{}", "═══════════════════════════════════════════════════════".red().bold());
+                eprintln!();
+                eprintln!("{} Attack detected on CAN bus!", "⚠️".red().bold());
+                eprintln!("{} Controller has been STOPPED for safety.", "⚠️".red().bold());
+                eprintln!("{} Sensor monitoring continues but NO COMMANDS will be sent.", "→".yellow());
+                eprintln!();
+                eprintln!("{} {} to resume operation.", "→".yellow(), "RESTART REQUIRED".red().bold());
+                eprintln!();
+                eprintln!("{}", "═══════════════════════════════════════════════════════".red().bold());
+                eprintln!();
+
+                // Broadcast emergency shutdown status on CAN bus (0x400)
+                // Status byte: 0xFF = Emergency Shutdown
+                let status_data = vec![0xFF];
+                let status_frame = SecuredCanFrame::new(
+                    can_ids::AUTO_STATUS,
+                    status_data,
+                    ECU_NAME.to_string(),
+                    &mut hsm,
+                );
+                let _ = writer.send_secured_frame(status_frame).await;
+
+                warning_displayed = true;
+            }
+
+            // Periodically re-broadcast shutdown status so monitor always shows it
+            if counter % 10 == 0 {
+                let status_data = vec![0xFF];  // 0xFF = Emergency Shutdown
+                let status_frame = SecuredCanFrame::new(
+                    can_ids::AUTO_STATUS,
+                    status_data,
+                    ECU_NAME.to_string(),
+                    &mut hsm,
+                );
+                let _ = writer.send_secured_frame(status_frame).await;
+            }
+
+            // Continue monitoring sensors but DO NOT send control commands
+            if counter % 50 == 0 {
+                println!(
+                    "{} [STOPPED] Monitoring: Avg Wheel Speed={:.1} rad/s",
+                    "⚠️".red(),
+                    vehicle_state.average_wheel_speed()
+                );
+            }
+
+            counter += 1;
+            tokio::time::sleep(Duration::from_millis(CONTROL_INTERVAL_MS)).await;
+            continue; // Skip sending commands
         }
 
         // Run control algorithm (firmware in protected memory)

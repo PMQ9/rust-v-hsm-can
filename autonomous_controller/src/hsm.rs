@@ -281,6 +281,11 @@ impl SecuredCanFrame {
 
     /// Verify the frame's MAC and CRC
     pub fn verify(&self, hsm: &VirtualHSM) -> Result<(), String> {
+        // Check if MAC is all zeros - this indicates an unsecured frame
+        if self.mac == [0u8; 32] && self.crc == 0 {
+            return Err(format!("UNSECURED FRAME from {} - NO MAC/CRC (possible injection attack)", self.source));
+        }
+
         // Reconstruct data for verification
         let mut verify_data = Vec::new();
         verify_data.extend_from_slice(&(self.can_id.value() as u32).to_le_bytes());
