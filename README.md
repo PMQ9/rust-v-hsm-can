@@ -108,6 +108,8 @@ When an unsecured CAN frame (MAC=0) is detected, the autonomous controller immed
 
 This fail-safe mechanism prevents compromised commands from reaching vehicle actuators during an active attack.
 
+<img src="utils/docs/CAN_bus_monitor_HSM_warning.png" alt="Alt Text" width="100%"/>
+
 ### HSM Security Keys
 
 Each ECU's Virtual HSM manages 7 cryptographic keys (all 256-bit):
@@ -187,7 +189,7 @@ rust-v-hsm-can/
 - [x] V-HSM cryptographic layer (HMAC-SHA256 + CRC32)
 - [x] Message authentication codes (MAC)
 - [x] Key management system
-- [ ] Attack scenario scripts
+- [x] Attack scenario scripts
 - [ ] Intrusion detection system
 - [ ] Performance benchmarks
 - [ ] CAN FD support
