@@ -98,6 +98,16 @@ All components connect to a shared broadcast bus. Any frame sent by any ECU is r
 - Anomaly detection for wheel speed discrepancies
 - Real-time dashboard monitor with security status
 
+### Emergency Attack Response
+
+When an unsecured CAN frame (MAC=0) is detected, the autonomous controller immediately enters emergency shutdown mode:
+- **Automatic Shutdown**: All control commands (brake, throttle, steering) stop immediately
+- **Safe Monitoring**: Continues reading sensor data but takes NO action
+- **Visible Alert**: Monitor displays red warning banner: "⚠ AUTONOMOUS CONTROLLER DEACTIVATED ⚠"
+- **Manual Recovery**: Requires restart to resume operation
+
+This fail-safe mechanism prevents compromised commands from reaching vehicle actuators during an active attack.
+
 ### HSM Security Keys
 
 Each ECU's Virtual HSM manages 7 cryptographic keys (all 256-bit):
