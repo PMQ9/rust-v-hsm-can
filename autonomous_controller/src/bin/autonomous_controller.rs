@@ -1,6 +1,5 @@
 use colored::*;
 use std::time::Duration;
-use std::collections::HashMap;
 use tokio::sync::mpsc;
 use autonomous_vehicle_sim::network::{BusClient, NetMessage};
 use autonomous_vehicle_sim::types::{can_ids, encoding, VehicleState};
@@ -95,14 +94,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         }
                         Err(e) => {
                             failed_count += 1;
-                            eprintln!("{} Security verification failed: {}", "⚠".yellow().bold(), e);
-                            eprintln!("  Verified: {}, Failed: {}", verified_count, failed_count);
+
+                            // Check if this is an unsecured frame attack
+                            if e.contains("UNSECURED FRAME") {
+                                eprintln!();
+                                eprintln!("{} {}", "ATTACK DETECTED:".red().bold(), "Unsecured Frame Injection".red());
+                                eprintln!("  {}", e.red());
+                                eprintln!("  CAN ID: 0x{:03X}", secured_frame.can_id.value());
+                                eprintln!("  Frame has NO MAC/CRC - unauthorized ECU on bus!");
+                                eprintln!("  Verified: {}, Failed: {}", verified_count, failed_count);
+                                eprintln!();
+                            } else {
+                                eprintln!("{} Security verification failed: {}", "⚠".yellow().bold(), e);
+                                eprintln!("  Verified: {}, Failed: {}", verified_count, failed_count);
+                            }
                         }
                     }
                 }
-                Ok(NetMessage::CanFrame(_)) => {
-                    // Legacy unencrypted frame - reject in secure mode
-                    eprintln!("{} Received unencrypted frame - rejecting!", "⚠".yellow().bold());
+                Ok(NetMessage::CanFrame(unsecured_frame)) => {
+                    // Unsecured frame detected - this is a potential attack!
+                    failed_count += 1;
+                    eprintln!();
+                    eprintln!("{} {} ATTACK: Unsecured frame detected!", "⚠️".red().bold(), "SECURITY".red().bold());
+                    eprintln!("  Source: {}", unsecured_frame.source.red());
+                    eprintln!("  CAN ID: 0x{:03X}", unsecured_frame.id.value());
+                    eprintln!("  Frame has NO MAC - potential injection attack!");
+                    eprintln!("  Verified: {}, Failed: {}", verified_count, failed_count);
+                    eprintln!();
                 }
                 Err(_) => break,
                 _ => {}

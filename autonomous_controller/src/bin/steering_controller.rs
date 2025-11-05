@@ -1,10 +1,12 @@
 use colored::*;
 use std::time::Duration;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use autonomous_vehicle_sim::network::{BusClient, NetMessage};
 use autonomous_vehicle_sim::types::{can_ids, encoding};
 use autonomous_vehicle_sim::hsm::{VirtualHSM, SecuredCanFrame, SignedFirmware};
 use autonomous_vehicle_sim::protected_memory::ProtectedMemory;
+use autonomous_vehicle_sim::error_handling::{AttackDetector, ValidationError};
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
 const ECU_NAME: &str = "STEERING_CTRL";
@@ -54,38 +56,86 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("{} Listening for secured steering commands...", "→".cyan());
     println!();
 
+    // Initialize attack detector
+    let attack_detector = Arc::new(Mutex::new(AttackDetector::new(ECU_NAME.to_string())));
+    println!("{} Attack detection initialized", "✓".green().bold());
+    println!("   • CRC error threshold: {} consecutive errors", autonomous_vehicle_sim::error_handling::CRC_ERROR_THRESHOLD);
+    println!("   • MAC error threshold: {} consecutive errors", autonomous_vehicle_sim::error_handling::MAC_ERROR_THRESHOLD);
+    println!();
+
     // Split client into reader and writer
     let (mut reader, _writer) = client.split();
 
     // Channel for communication
     let (frame_tx, mut frame_rx) = mpsc::channel::<SecuredCanFrame>(100);
 
-    // Clone HSM for receiver task
+    // Clone HSM and attack detector for receiver task
     let hsm_clone = hsm.clone();
+    let detector_clone = Arc::clone(&attack_detector);
 
-    // Spawn receiver task with MAC/CRC verification
+    // Spawn receiver task with MAC/CRC verification and attack detection
     tokio::spawn(async move {
         loop {
             match reader.receive_message().await {
                 Ok(NetMessage::SecuredCanFrame(secured_frame)) => {
                     // Only verify and process steering command frames
                     if secured_frame.can_id == can_ids::STEERING_COMMAND {
+                        // Check if we should still accept frames
+                        let should_accept = {
+                            let detector = detector_clone.lock().unwrap();
+                            detector.should_accept_frames()
+                        }; // Lock is dropped here
+
+                        if !should_accept {
+                            // Under attack - reject all frames
+                            continue;
+                        }
+
                         // Verify MAC and CRC for frames we care about
                         match secured_frame.verify(&hsm_clone) {
                             Ok(_) => {
+                                // Successful verification - reset error counters
+                                {
+                                    let mut detector = detector_clone.lock().unwrap();
+                                    detector.record_success();
+                                } // Lock is dropped here
+
                                 if frame_tx.send(secured_frame).await.is_err() {
                                     break;
                                 }
                             }
                             Err(e) => {
-                                eprintln!("{} Security verification failed: {}", "⚠".yellow().bold(), e);
+                                // Determine error type and record it
+                                let should_continue = {
+                                    let mut detector = detector_clone.lock().unwrap();
+                                    let error_type = if e.contains("UNSECURED FRAME") {
+                                        ValidationError::UnsecuredFrame
+                                    } else if e.contains("CRC") {
+                                        ValidationError::CrcMismatch
+                                    } else {
+                                        ValidationError::MacMismatch
+                                    };
+                                    detector.record_error(error_type, &secured_frame.source)
+                                }; // Lock is dropped here
+
+                                if !should_continue {
+                                    println!("{} Frame rejected - security threshold exceeded", "✗".red());
+                                }
                             }
                         }
                     }
                     // Silently ignore other frames (sensor data, etc.)
                 }
-                Ok(NetMessage::CanFrame(_)) => {
-                    eprintln!("{} Received unencrypted frame - rejecting!", "⚠".yellow().bold());
+                Ok(NetMessage::CanFrame(unsecured_frame)) => {
+                    // Unsecured frame detected - record as attack
+                    let should_continue = {
+                        let mut detector = detector_clone.lock().unwrap();
+                        detector.record_error(ValidationError::UnsecuredFrame, &unsecured_frame.source)
+                    };
+
+                    if !should_continue {
+                        eprintln!("{} Unsecured frame rejected - attack threshold exceeded", "✗".red());
+                    }
                 }
                 Err(_) => break,
                 _ => {}
