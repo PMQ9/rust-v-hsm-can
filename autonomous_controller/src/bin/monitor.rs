@@ -256,9 +256,8 @@ impl Dashboard {
                 format!("ATTACK DETECTED: {} unsecured frames", self.unsecured_frame_count).red().bold()
             )?;
             if !self.recent_attackers.is_empty() {
-                writeln!(stdout, "\r{} {} {}\r",
-                    "⚠️".yellow(),
-                    "Attack Source:".red().bold(),
+                writeln!(stdout, "\r{} {}\r",
+                    " Attack Source:".red().bold(),
                     self.recent_attackers.join(", ").red()
                 )?;
             }

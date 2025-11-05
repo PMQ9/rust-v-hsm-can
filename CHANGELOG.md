@@ -2,6 +2,21 @@
 
 ## 2025-11-05
 
+### Unsecured Frame Attack Detection
+- Enhanced attack detection to identify frames with MAC=0 as unsecured frame injection attacks
+- **Monitor displays real-time attack**:
+  - Provides immediate visual feedback during injection attacks
+  - Attack type: "Unsecured Frame Injection"
+  - Source ECU identification
+
+### Attack Detection and Error Handling
+- Created comprehensive `error_handling` module with `AttackDetector` for CAN bus security monitoring
+- Implemented intelligent error tolerance with configurable thresholds:
+  - CRC errors: Allow 5 consecutive failures (tolerance for signal degradation/noise)
+  - MAC errors: Allow 3 consecutive failures (stricter for cryptographic failures)
+- Three-tier security state machine: Normal → Warning → Under Attack
+- Automatic error counter reset on successful frame validation (recovery from transient errors)
+
 ### Attack Scenario Scripts
 - Added four educational attack scenario scripts for security testing:
   - `attack_injection`: Demonstrates malicious frame injection (fake sensor data)
