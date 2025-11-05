@@ -6,14 +6,17 @@ use crossterm::{
     terminal::{self, ClearType},
 };
 use std::io::{self, Write};
+use std::sync::Arc;
 use std::time::Duration;
-use vhsm_can::types::{ArmVariant, CanId, EcuConfig};
+use tokio::sync::Mutex;
+use vhsm_can::network::BusWriter;
+use vhsm_can::types::{ArmVariant, CanFrame, CanId, EcuConfig};
 
 const ECU_NAME: &str = "INPUT_ECU";
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Setup terminal
     terminal::enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -27,8 +30,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     draw_ui(&mut stdout, &config)?;
 
+    // Connect to bus server
+    writeln!(stdout, "\r\n\nConnecting to CAN bus at {}...\r", BUS_ADDRESS)?;
+    stdout.flush()?;
+
+    let client = match vhsm_can::network::BusClient::connect(BUS_ADDRESS, ECU_NAME.to_string()).await {
+        Ok(c) => c,
+        Err(e) => {
+            terminal::disable_raw_mode()?;
+            eprintln!("\r\n{}Failed to connect: {}{}", "✗ ".red(), e, "".clear());
+            eprintln!("\r\nStart the bus server with: cargo run --bin bus_server");
+            return Ok(());
+        }
+    };
+
+    writeln!(stdout, "\r{}Connected to CAN bus!{}\r", "✓ ".green(), "".clear())?;
+    stdout.flush()?;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    execute!(stdout, terminal::Clear(ClearType::All))?;
+    draw_ui(&mut stdout, &config)?;
+
+    // Split client
+    let (_reader, writer) = client.split();
+    let writer = Arc::new(Mutex::new(writer));
+
     let mut input_buffer = String::new();
-    let mut sent_count = 0u64;
     let mut last_sent: Vec<String> = Vec::new();
 
     loop {
@@ -48,27 +75,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     KeyCode::Enter => {
                         if !input_buffer.is_empty() {
                             // Parse and send frame
-                            if let Some(msg) = process_input(&input_buffer) {
-                                sent_count += 1;
-                                let log_entry = format!(
-                                    "[{}] Sent frame: ID={:03X}, Data=[{}]",
-                                    chrono::Utc::now().format("%H:%M:%S"),
-                                    msg.0,
-                                    msg.1
-                                        .iter()
-                                        .map(|b| format!("{:02X}", b))
-                                        .collect::<Vec<_>>()
-                                        .join(" ")
-                                );
-                                last_sent.push(log_entry);
+                            if let Some((id, data)) = process_input(&input_buffer) {
+                                let frame = CanFrame::new(id, data, ECU_NAME.to_string());
+
+                                // Send to bus
+                                let mut w = writer.lock().await;
+                                match w.send_frame(frame.clone()).await {
+                                    Ok(_) => {
+                                        let log_entry = format!(
+                                            "[{}] Sent frame: ID={}, Data=[{}]",
+                                            chrono::Utc::now().format("%H:%M:%S"),
+                                            match frame.id {
+                                                CanId::Standard(id) => format!("{:03X}", id),
+                                                CanId::Extended(id) => format!("{:08X}", id),
+                                            },
+                                            frame.data
+                                                .iter()
+                                                .map(|b| format!("{:02X}", b))
+                                                .collect::<Vec<_>>()
+                                                .join(" ")
+                                        );
+                                        last_sent.push(log_entry);
+                                    }
+                                    Err(e) => {
+                                        let error = format!(
+                                            "[{}] Error sending: {}",
+                                            chrono::Utc::now().format("%H:%M:%S"),
+                                            e
+                                        );
+                                        last_sent.push(error);
+                                    }
+                                }
 
                                 if last_sent.len() > 10 {
                                     last_sent.remove(0);
                                 }
 
                                 update_sent_area(&mut stdout, &last_sent)?;
-
-                                // TODO: Actually send to bus when integrated
                             } else {
                                 let error = format!(
                                     "[{}] Invalid format. Use: <ID> <byte1> <byte2> ... (hex)",
@@ -186,14 +229,28 @@ fn update_sent_area(stdout: &mut io::Stdout, sent: &[String]) -> io::Result<()> 
     Ok(())
 }
 
-// Parse input format: "123 01 02 03" -> (0x123, vec![0x01, 0x02, 0x03])
-fn process_input(input: &str) -> Option<(u16, Vec<u8>)> {
+// Parse input format: "123 01 02 03" -> (CanId::Standard(0x123), vec![0x01, 0x02, 0x03])
+fn process_input(input: &str) -> Option<(CanId, Vec<u8>)> {
     let parts: Vec<&str> = input.trim().split_whitespace().collect();
     if parts.is_empty() {
         return None;
     }
 
-    let id = u16::from_str_radix(parts[0], 16).ok()?;
+    // Parse ID - if it's longer than 3 hex digits, treat as extended
+    let id_str = parts[0];
+    let id = if id_str.len() <= 3 {
+        let id_val = u16::from_str_radix(id_str, 16).ok()?;
+        if id_val > 0x7FF {
+            return None; // Invalid standard ID
+        }
+        CanId::Standard(id_val)
+    } else {
+        let id_val = u32::from_str_radix(id_str, 16).ok()?;
+        if id_val > 0x1FFFFFFF {
+            return None; // Invalid extended ID
+        }
+        CanId::Extended(id_val)
+    };
 
     let mut data = Vec::new();
     for part in &parts[1..] {
