@@ -30,6 +30,7 @@ struct Dashboard {
     security_failures: u64,
     unsecured_frame_count: u64,
     recent_attackers: Vec<String>, // Track sources of unsecured frames
+    controller_emergency_shutdown: bool, // Controller in emergency shutdown mode
 }
 
 #[tokio::main]
@@ -165,6 +166,7 @@ impl Dashboard {
             security_failures: 0,
             unsecured_frame_count: 0,
             recent_attackers: Vec::new(),
+            controller_emergency_shutdown: false,
         }
     }
 
@@ -188,6 +190,14 @@ impl Dashboard {
             secured_frame: secured_frame.clone(),
             decoded,
         };
+
+        // Check for emergency shutdown status from controller
+        if secured_frame.can_id == can_ids::AUTO_STATUS {
+            if !secured_frame.data.is_empty() && secured_frame.data[0] == 0xFF {
+                // 0xFF = Emergency Shutdown
+                self.controller_emergency_shutdown = true;
+            }
+        }
 
         // Categorize frame based on CAN ID and source
         match secured_frame.can_id {
@@ -252,7 +262,7 @@ impl Dashboard {
             writeln!(stdout, "\r{} Total frames: {} | {} {} | Press 'q' to quit\r",
                 "ℹ".blue(),
                 self.frame_count,
-                "🚨".red().bold(),
+                "⚠".red().bold(),
                 format!("ATTACK DETECTED: {} unsecured frames", self.unsecured_frame_count).red().bold()
             )?;
             if !self.recent_attackers.is_empty() {
@@ -267,6 +277,22 @@ impl Dashboard {
                 self.frame_count,
                 "✓".green().bold()
             )?;
+        }
+
+        // Display emergency shutdown warning if controller is stopped
+        if self.controller_emergency_shutdown {
+            writeln!(stdout, "\r")?;
+            writeln!(stdout, "\r{}", "═══════════════════════════════════════════════════════════════════════════════".red().bold())?;
+            writeln!(stdout, "\r{}  {}\r",
+                " ".repeat(15),
+                "⚠ AUTONOMOUS CONTROLLER DEACTIVATED ⚠".red().bold()
+            )?;
+            writeln!(stdout, "\r{}", "═══════════════════════════════════════════════════════════════════════════════".red().bold())?;
+            writeln!(stdout, "\r{} Attack detected - Controller STOPPED for safety | {} to resume\r",
+                " ".repeat(10),
+                "RESTART REQUIRED".yellow().bold()
+            )?;
+            writeln!(stdout, "\r{}", "═══════════════════════════════════════════════════════════════════════════════".red().bold())?;
         }
         // writeln!(stdout, "\r{} All frames include MAC (HMAC-SHA256) and CRC32 verification\r", "⚡".yellow())?;
         writeln!(stdout, "\r")?;

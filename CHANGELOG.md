@@ -7,9 +7,15 @@
 - **Safe Mode Features**:
   - Controller STOPS sending all commands (brake, throttle, steering) when attack detected
   - Continues monitoring sensor inputs but takes NO ACTION
+  - Displays prominent warning with explanation
   - Requires manual restart to resume operation
 - **Thread-safe attack detection**: Uses AtomicBool for real-time coordination between receiver and control loop
 - **Safety-first design**: Prevents compromised commands from reaching actuators
+- **Launcher enhancement**:
+  - Automatic cleanup of old processes before starting new simulation
+- **Visible shutdown status**:
+  - Controller broadcasts emergency shutdown status on CAN bus (ID 0x400)
+  - Indication that restart is required
 
 ### Unsecured Frame Attack Detection
 - Enhanced attack detection to identify frames with MAC=0 as unsecured frame injection attacks

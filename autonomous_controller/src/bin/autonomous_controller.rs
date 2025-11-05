@@ -170,11 +170,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // CHECK FOR ATTACK - STOP SENDING COMMANDS IF DETECTED
         let is_under_attack = attack_detected.load(Ordering::SeqCst);
         if is_under_attack {
-            // Display warning message once
+            // Display warning message once and broadcast shutdown status
             if !warning_displayed {
                 eprintln!();
                 eprintln!("{}", "═══════════════════════════════════════════════════════".red().bold());
-                eprintln!("{}", "  🚨 AUTONOMOUS CONTROLLER DEACTIVATED 🚨           ".red().bold());
+                eprintln!("{}", "   AUTONOMOUS CONTROLLER DEACTIVATED            ".red().bold());
                 eprintln!("{}", "═══════════════════════════════════════════════════════".red().bold());
                 eprintln!();
                 eprintln!("{} Attack detected on CAN bus!", "⚠️".red().bold());
@@ -185,7 +185,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 eprintln!();
                 eprintln!("{}", "═══════════════════════════════════════════════════════".red().bold());
                 eprintln!();
+
+                // Broadcast emergency shutdown status on CAN bus (0x400)
+                // Status byte: 0xFF = Emergency Shutdown
+                let status_data = vec![0xFF];
+                let status_frame = SecuredCanFrame::new(
+                    can_ids::AUTO_STATUS,
+                    status_data,
+                    ECU_NAME.to_string(),
+                    &mut hsm,
+                );
+                let _ = writer.send_secured_frame(status_frame).await;
+
                 warning_displayed = true;
+            }
+
+            // Periodically re-broadcast shutdown status so monitor always shows it
+            if counter % 10 == 0 {
+                let status_data = vec![0xFF];  // 0xFF = Emergency Shutdown
+                let status_frame = SecuredCanFrame::new(
+                    can_ids::AUTO_STATUS,
+                    status_data,
+                    ECU_NAME.to_string(),
+                    &mut hsm,
+                );
+                let _ = writer.send_secured_frame(status_frame).await;
             }
 
             // Continue monitoring sensors but DO NOT send control commands
