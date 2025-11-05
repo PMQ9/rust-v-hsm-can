@@ -1,0 +1,31 @@
+[package]
+name = "vhsm-can"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1.42", features = ["full"] }
+crossterm = "0.28"
+serde = { version = "1.0", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+colored = "2.1"
+
+[[bin]]
+name = "vhsm-can"
+path = "src/main.rs"
+
+[[bin]]
+name = "monitor"
+path = "src/bin/monitor.rs"
+
+[[bin]]
+name = "input_ecu"
+path = "src/bin/input_ecu.rs"
+
+[[bin]]
+name = "output_ecu"
+path = "src/bin/output_ecu.rs"
+
+[[bin]]
+name = "demo"
+path = "src/bin/demo.rs"
