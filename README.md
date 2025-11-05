@@ -13,13 +13,10 @@ This repository contains two CAN bus simulators:
 
 ## Quick Start
 
-### Option A: Autonomous Vehicle Simulator (Recommended)
+### Option A: Autonomous Vehicle Simulator
 ```bash
 cd autonomous_controller
-# See autonomous_controller/README.md for detailed instructions
-cargo run --bin bus_server  # Terminal 1
-cargo run --bin monitor      # Terminal 2
-# Start sensor ECUs, controllers, and actuators...
+cargo run
 ```
 
 ### Option B: Basic CAN Simulator
@@ -55,17 +52,37 @@ All components connect to a shared broadcast bus. Any frame sent by any ECU is r
 ### Autonomous Vehicle Project Architecture
 
 ```
-                    CAN BUS SERVER (127.0.0.1:9000)
-                              │
-        ┌─────────────────────┼─────────────────────┐
-        │                     │                     │
-   SENSOR LAYER         CONTROLLER LAYER      ACTUATOR LAYER
-        │                     │                     │
-   ┌────┴────┐          ┌────┴────┐          ┌────┴────┐
-   │ 4 Wheels│          │ Auto    │          │ Brake   │
-   │ Engine  │─────────>│ Control │─────────>│ Steering│
-   │ Steering│          │  Brain  │          │ Control │
-   └─────────┘          └─────────┘          └─────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        CAN BUS SERVER                           │
+│                      (127.0.0.1:9000)                           │
+└───────────┬─────────────────────────────────────────┬───────────┘
+            │                                         │
+    ┌───────▼────────┐                         ┌──────▼───────┐
+    │  SENSOR LAYER  │                         │ MONITOR      │
+    ├────────────────┤                         │ (Observer)   │
+    │ • 4x Wheel     │                         └──────────────┘
+    │   Speed        │
+    │ • Engine ECU   │
+    │ • Steering     │
+    │   Sensor       │
+    └───────┬────────┘
+            │
+    ┌───────▼────────────┐
+    │  CONTROLLER LAYER  │
+    ├────────────────────┤
+    │ • Autonomous       │
+    │   Controller       │
+    │   (Brain)          │
+    └───────┬────────────┘
+            │
+    ┌───────▼────────┐
+    │ ACTUATOR LAYER │
+    ├────────────────┤
+    │ • Brake        │
+    │   Controller   │
+    │ • Steering     │
+    │   Controller   │
+    └────────────────┘
 ```
 
 **9 ECUs**: wheel_fl, wheel_fr, wheel_rl, wheel_rr, engine_ecu, steering_sensor, autonomous_controller, brake_controller, steering_controller
