@@ -9,6 +9,23 @@ fn main() {
     println!("{}", "═══════════════════════════════════════════════════════════════".cyan().bold());
     println!();
 
+    // Cleanup: Kill any old simulation processes first
+    println!("{} Cleaning up old processes...", "→".yellow());
+    let cleanup = Command::new("pkill")
+        .args(&["-f", "target/debug/(bus_server|autonomous_controller|wheel|engine|steering|brake|monitor)"])
+        .output();
+
+    match cleanup {
+        Ok(_) => {
+            println!("{} Old processes cleaned up", "✓".green());
+            thread::sleep(Duration::from_millis(500)); // Wait for processes to die
+        }
+        Err(_) => {
+            println!("{} No old processes found (or pkill unavailable)", "→".bright_black());
+        }
+    }
+    println!();
+
     let mut processes: Vec<Child> = Vec::new();
 
     // Start bus server first
