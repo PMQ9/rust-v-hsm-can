@@ -227,7 +227,7 @@ impl Dashboard {
 
         // Header
         writeln!(stdout, "\r{}", "═══════════════════════════════════════════════════════════════════════════════".cyan().bold())?;
-        writeln!(stdout, "\r{}", "          AUTONOMOUS VEHICLE CAN BUS MONITOR (HSM SECURED)                  ".cyan().bold())?;
+        writeln!(stdout, "\r{}", "          AUTONOMOUS VEHICLE CAN BUS MONITOR                   ".cyan().bold())?;
         writeln!(stdout, "\r{}", "═══════════════════════════════════════════════════════════════════════════════".cyan().bold())?;
         writeln!(stdout, "\r")?;
         writeln!(stdout, "\r{} Total frames: {} | {} Security: ENABLED | Press 'q' to quit\r",
@@ -235,7 +235,7 @@ impl Dashboard {
             self.frame_count,
             "✓".green().bold()
         )?;
-        writeln!(stdout, "\r{} All frames include MAC (HMAC-SHA256) and CRC32 verification\r", "⚡".yellow())?;
+        // writeln!(stdout, "\r{} All frames include MAC (HMAC-SHA256) and CRC32 verification\r", "⚡".yellow())?;
         writeln!(stdout, "\r")?;
 
         // SENSORS Section
@@ -273,14 +273,16 @@ impl Dashboard {
         if let Some(latest) = self.sensors.get(&id) {
             let time_str = latest.secured_frame.timestamp.format("%H:%M:%S%.3f");
             let id_str = format_can_id(latest.secured_frame.can_id);
+            let raw_data = format_raw_data(&latest.secured_frame.data);
             let crc_str = format!("CRC:{:08X}", latest.secured_frame.crc);
             let mac_str = format!("MAC:{}...", hex_encode(&latest.secured_frame.mac[..4]));
             writeln!(
                 stdout,
-                "\r  {} {} → ID: {} | {} | {} {} | {}",
-                format!("[{:12}]", name).green(),
+                "\r  {:18} {} ID: {:6} | Data: {:29} | {:32} | {} {} | {}",
+                format!("[{}]", name).green(),
                 "→".cyan(),
                 id_str,
+                raw_data.bright_black(),
                 latest.decoded,
                 crc_str.yellow(),
                 mac_str.magenta(),
@@ -289,9 +291,11 @@ impl Dashboard {
         } else {
             writeln!(
                 stdout,
-                "\r  {} {} ID: --- | {} | ---",
-                format!("[{:12}]", name).bright_black(),
+                "\r  {:18} {} ID: {:6} | Data: {:29} | {:32} | ---",
+                format!("[{}]", name).bright_black(),
                 "→".bright_black(),
+                "---",
+                "---",
                 "Waiting for data...".bright_black()
             )?;
         }
@@ -302,14 +306,16 @@ impl Dashboard {
         if let Some(latest) = self.controller_tx.get(&id) {
             let time_str = latest.secured_frame.timestamp.format("%H:%M:%S%.3f");
             let id_str = format_can_id(latest.secured_frame.can_id);
+            let raw_data = format_raw_data(&latest.secured_frame.data);
             let crc_str = format!("CRC:{:08X}", latest.secured_frame.crc);
             let mac_str = format!("MAC:{}...", hex_encode(&latest.secured_frame.mac[..4]));
             writeln!(
                 stdout,
-                "\r    {} {} ID: {} | {} | {} {} | {}",
-                format!("[{:14}]", name).bright_blue(),
+                "\r    {:16} {} ID: {:6} | Data: {:29} | {:32} | {} {} | {}",
+                format!("[{}]", name).bright_blue(),
                 "→".cyan(),
                 id_str,
+                raw_data.bright_black(),
                 latest.decoded,
                 crc_str.yellow(),
                 mac_str.magenta(),
@@ -318,9 +324,11 @@ impl Dashboard {
         } else {
             writeln!(
                 stdout,
-                "\r    {} {} ID: --- | {} | ---",
-                format!("[{:14}]", name).bright_black(),
+                "\r    {:16} {} ID: {:6} | Data: {:29} | {:32} | ---",
+                format!("[{}]", name).bright_black(),
                 "→".bright_black(),
+                "---",
+                "---",
                 "No data sent yet".bright_black()
             )?;
         }
@@ -331,13 +339,15 @@ impl Dashboard {
         if let Some(latest) = self.controller_rx.get(&id) {
             let time_str = latest.secured_frame.timestamp.format("%H:%M:%S%.3f");
             let id_str = format_can_id(latest.secured_frame.can_id);
+            let raw_data = format_raw_data(&latest.secured_frame.data);
             let crc_str = format!("CRC:{:08X}", latest.secured_frame.crc);
             writeln!(
                 stdout,
-                "\r    {} {} ID: {} | {} | {} | {}",
-                format!("[{:14}]", name).bright_blue(),
+                "\r    {:16} {} ID: {:6} | Data: {:29} | {:32} | {} | {}",
+                format!("[{}]", name).bright_blue(),
                 "←".cyan(),
                 id_str,
+                raw_data.bright_black(),
                 latest.decoded,
                 crc_str.yellow(),
                 time_str.to_string().bright_black()
@@ -345,9 +355,11 @@ impl Dashboard {
         } else {
             writeln!(
                 stdout,
-                "\r    {} {} ID: --- | {} | ---",
-                format!("[{:14}]", name).bright_black(),
+                "\r    {:16} {} ID: {:6} | Data: {:29} | {:32} | ---",
+                format!("[{}]", name).bright_black(),
                 "←".bright_black(),
+                "---",
+                "---",
                 "No data received yet".bright_black()
             )?;
         }
@@ -358,14 +370,16 @@ impl Dashboard {
         if let Some(latest) = self.actuators.get(&id) {
             let time_str = latest.secured_frame.timestamp.format("%H:%M:%S%.3f");
             let id_str = format_can_id(latest.secured_frame.can_id);
+            let raw_data = format_raw_data(&latest.secured_frame.data);
             let crc_str = format!("CRC:{:08X}", latest.secured_frame.crc);
             let mac_str = format!("MAC:{}...", hex_encode(&latest.secured_frame.mac[..4]));
             writeln!(
                 stdout,
-                "\r  {} {} ID: {} | {} | {} {} | {}",
-                format!("[{:12}]", name).red(),
+                "\r  {:18} {} ID: {:6} | Data: {:29} | {:32} | {} {} | {}",
+                format!("[{}]", name).red(),
                 "←".cyan(),
                 id_str,
+                raw_data.bright_black(),
                 latest.decoded,
                 crc_str.yellow(),
                 mac_str.magenta(),
@@ -374,9 +388,11 @@ impl Dashboard {
         } else {
             writeln!(
                 stdout,
-                "\r  {} {} ID: --- | {} | ---",
-                format!("[{:12}]", name).bright_black(),
+                "\r  {:18} {} ID: {:6} | Data: {:29} | {:32} | ---",
+                format!("[{}]", name).bright_black(),
                 "←".bright_black(),
+                "---",
+                "---",
                 "Waiting for data...".bright_black()
             )?;
         }
@@ -464,4 +480,25 @@ fn decode_secured_message(secured_frame: &SecuredCanFrame) -> String {
 
 fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{:02X}", b)).collect()
+}
+
+fn format_raw_data(data: &[u8]) -> String {
+    // Format as 4 blocks of 2 bytes each (standard CAN 8-byte frame visualization)
+    let mut bytes = [0u8; 8];
+    bytes[..data.len()].copy_from_slice(data);
+
+    let blocks: Vec<String> = (0..4)
+        .map(|i| {
+            if i * 2 < data.len() {
+                format!("{:02X} {:02X}",
+                    bytes[i * 2],
+                    if i * 2 + 1 < data.len() { bytes[i * 2 + 1] } else { 0 }
+                )
+            } else {
+                "-- --".to_string()
+            }
+        })
+        .collect();
+
+    blocks.join("  ")
 }

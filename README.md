@@ -4,7 +4,7 @@ Virtual Hardware Security Module (V-HSM) for CAN Bus security, written in Rust.
 
 **CAN Bus Monitor:**
 
-<img src="utils/docs/CAN_bus_monitor.png" alt="Alt Text" width="65%"/>
+<img src="utils/docs/CAN_bus_monitor.png" alt="Alt Text" width="100%"/>
 
 This repository contains two CAN bus simulators:
 

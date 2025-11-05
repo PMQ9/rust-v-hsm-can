@@ -2,6 +2,10 @@
 
 ## 2025-11-05
 
+### Monitor Display Improvements
+- Added raw data column showing 4 blocks of 2 bytes (standard CAN format)
+- Fixed column alignment across all sections
+
 ### Fixed Monitor Stopping at ~14k Frames
 - Removed mutex contention during network I/O in bus_server (each client owns its writer)
 - Added broadcast lag recovery
