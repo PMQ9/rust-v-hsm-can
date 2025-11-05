@@ -13,6 +13,12 @@ chrono = { version = "0.4", features = ["serde"] }
 colored = "2.1"
 rand = "0.8"
 ctrlc = "3.4"
+# Cryptography dependencies for HSM
+hmac = "0.12"
+sha2 = "0.10"
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+crc = "3.0"
 
 # Main launcher
 [[bin]]

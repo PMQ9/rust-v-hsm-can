@@ -1,4 +1,5 @@
 use crate::types::CanFrame;
+use crate::hsm::SecuredCanFrame;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
@@ -6,8 +7,10 @@ use tokio::net::TcpStream;
 /// Network message types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NetMessage {
-    /// CAN frame message
+    /// CAN frame message (legacy - unencrypted)
     CanFrame(CanFrame),
+    /// Secured CAN frame message (with MAC and CRC)
+    SecuredCanFrame(SecuredCanFrame),
     /// Client registration
     Register { client_name: String },
     /// Acknowledgment
@@ -119,5 +122,10 @@ impl BusWriter {
     /// Send a CAN frame to the bus
     pub async fn send_frame(&mut self, frame: CanFrame) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.send_message(&NetMessage::CanFrame(frame)).await
+    }
+
+    /// Send a secured CAN frame to the bus
+    pub async fn send_secured_frame(&mut self, frame: SecuredCanFrame) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        self.send_message(&NetMessage::SecuredCanFrame(frame)).await
     }
 }

@@ -10,13 +10,14 @@ use std::io::{self, Write};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use autonomous_vehicle_sim::network::{BusClient, NetMessage};
-use autonomous_vehicle_sim::types::{CanFrame, CanId, can_ids, encoding};
+use autonomous_vehicle_sim::types::{CanId, can_ids, encoding};
+use autonomous_vehicle_sim::hsm::SecuredCanFrame;
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
 
 #[derive(Clone)]
 struct LatestFrame {
-    frame: CanFrame,
+    secured_frame: SecuredCanFrame,
     decoded: String,
 }
 
@@ -26,6 +27,7 @@ struct Dashboard {
     controller_rx: HashMap<CanId, LatestFrame>,
     actuators: HashMap<CanId, LatestFrame>,
     frame_count: u64,
+    security_failures: u64,
 }
 
 #[tokio::main]
@@ -83,16 +85,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (mut reader, _writer) = client.split();
 
     // Create a channel to receive frames from the network task
-    let (frame_tx, mut frame_rx) = mpsc::channel::<CanFrame>(100);
+    let (frame_tx, mut frame_rx) = mpsc::channel::<SecuredCanFrame>(100);
 
-    // Spawn network reader task
+    // Spawn network reader task (monitoring all secured frames)
     tokio::spawn(async move {
         loop {
             match reader.receive_message().await {
-                Ok(NetMessage::CanFrame(frame)) => {
-                    if frame_tx.send(frame).await.is_err() {
+                Ok(NetMessage::SecuredCanFrame(secured_frame)) => {
+                    // Monitor receives all frames without verification
+                    // (it's a passive observer, not a security participant)
+                    if frame_tx.send(secured_frame).await.is_err() {
                         break;
                     }
+                }
+                Ok(NetMessage::CanFrame(_)) => {
+                    // Legacy unencrypted frames (ignore in secure mode)
                 }
                 Err(_) => break,
                 _ => {}
@@ -146,19 +153,20 @@ impl Dashboard {
             controller_rx: HashMap::new(),
             actuators: HashMap::new(),
             frame_count: 0,
+            security_failures: 0,
         }
     }
 
-    fn update_frame(&mut self, frame: CanFrame) {
+    fn update_frame(&mut self, secured_frame: SecuredCanFrame) {
         self.frame_count += 1;
-        let decoded = decode_message(&frame);
+        let decoded = decode_secured_message(&secured_frame);
         let latest = LatestFrame {
-            frame: frame.clone(),
+            secured_frame: secured_frame.clone(),
             decoded,
         };
 
         // Categorize frame based on CAN ID and source
-        match frame.id {
+        match secured_frame.can_id {
             // Sensor messages (TX only)
             id if id == can_ids::WHEEL_SPEED_FL ||
                   id == can_ids::WHEEL_SPEED_FR ||
@@ -168,23 +176,23 @@ impl Dashboard {
                   id == can_ids::ENGINE_THROTTLE ||
                   id == can_ids::STEERING_ANGLE ||
                   id == can_ids::STEERING_TORQUE => {
-                self.sensors.insert(frame.id, latest.clone());
+                self.sensors.insert(secured_frame.can_id, latest.clone());
             },
             // Controller commands (TX from controller)
             id if id == can_ids::BRAKE_COMMAND ||
                   id == can_ids::THROTTLE_COMMAND ||
                   id == can_ids::STEERING_COMMAND => {
-                if frame.source == "AUTONOMOUS_CTRL" {
-                    self.controller_tx.insert(frame.id, latest.clone());
+                if secured_frame.source == "AUTONOMOUS_CTRL" {
+                    self.controller_tx.insert(secured_frame.can_id, latest.clone());
                 }
                 // Also track in actuators (RX for actuators)
-                self.actuators.insert(frame.id, latest.clone());
+                self.actuators.insert(secured_frame.can_id, latest.clone());
             },
             _ => {}
         }
 
         // Track sensor messages received by controller
-        if frame.source != "AUTONOMOUS_CTRL" {
+        if secured_frame.source != "AUTONOMOUS_CTRL" {
             let sensor_ids = vec![
                 can_ids::WHEEL_SPEED_FL,
                 can_ids::WHEEL_SPEED_FR,
@@ -195,8 +203,8 @@ impl Dashboard {
                 can_ids::STEERING_ANGLE,
                 can_ids::STEERING_TORQUE,
             ];
-            if sensor_ids.contains(&frame.id) {
-                self.controller_rx.insert(frame.id, latest.clone());
+            if sensor_ids.contains(&secured_frame.can_id) {
+                self.controller_rx.insert(secured_frame.can_id, latest.clone());
             }
         }
     }
@@ -212,10 +220,15 @@ impl Dashboard {
 
         // Header
         writeln!(stdout, "\r{}", "═══════════════════════════════════════════════════════════════════════════════".cyan().bold())?;
-        writeln!(stdout, "\r{}", "               AUTONOMOUS VEHICLE CAN BUS MONITOR                             ".cyan().bold())?;
+        writeln!(stdout, "\r{}", "          AUTONOMOUS VEHICLE CAN BUS MONITOR (HSM SECURED)                  ".cyan().bold())?;
         writeln!(stdout, "\r{}", "═══════════════════════════════════════════════════════════════════════════════".cyan().bold())?;
         writeln!(stdout, "\r")?;
-        writeln!(stdout, "\r{} Total frames: {} | Press 'q' to quit\r", "ℹ".blue(), self.frame_count)?;
+        writeln!(stdout, "\r{} Total frames: {} | {} Security: ENABLED | Press 'q' to quit\r",
+            "ℹ".blue(),
+            self.frame_count,
+            "✓".green().bold()
+        )?;
+        writeln!(stdout, "\r{} All frames include MAC (HMAC-SHA256) and CRC32 verification\r", "⚡".yellow())?;
         writeln!(stdout, "\r")?;
 
         // SENSORS Section
@@ -251,15 +264,19 @@ impl Dashboard {
 
     fn draw_sensor_line(&self, stdout: &mut io::Stdout, id: CanId, name: &str) -> io::Result<()> {
         if let Some(latest) = self.sensors.get(&id) {
-            let time_str = latest.frame.timestamp.format("%H:%M:%S%.3f");
-            let id_str = format_can_id(latest.frame.id);
+            let time_str = latest.secured_frame.timestamp.format("%H:%M:%S%.3f");
+            let id_str = format_can_id(latest.secured_frame.can_id);
+            let crc_str = format!("CRC:{:08X}", latest.secured_frame.crc);
+            let mac_str = format!("MAC:{}...", hex_encode(&latest.secured_frame.mac[..4]));
             writeln!(
                 stdout,
-                "\r  {} {} → ID: {} | {} | {}",
+                "\r  {} {} → ID: {} | {} | {} {} | {}",
                 format!("[{:12}]", name).green(),
                 "→".cyan(),
                 id_str,
                 latest.decoded,
+                crc_str.yellow(),
+                mac_str.magenta(),
                 time_str.to_string().bright_black()
             )?;
         } else {
@@ -276,15 +293,19 @@ impl Dashboard {
 
     fn draw_controller_tx_line(&self, stdout: &mut io::Stdout, id: CanId, name: &str) -> io::Result<()> {
         if let Some(latest) = self.controller_tx.get(&id) {
-            let time_str = latest.frame.timestamp.format("%H:%M:%S%.3f");
-            let id_str = format_can_id(latest.frame.id);
+            let time_str = latest.secured_frame.timestamp.format("%H:%M:%S%.3f");
+            let id_str = format_can_id(latest.secured_frame.can_id);
+            let crc_str = format!("CRC:{:08X}", latest.secured_frame.crc);
+            let mac_str = format!("MAC:{}...", hex_encode(&latest.secured_frame.mac[..4]));
             writeln!(
                 stdout,
-                "\r    {} {} ID: {} | {} | {}",
+                "\r    {} {} ID: {} | {} | {} {} | {}",
                 format!("[{:14}]", name).bright_blue(),
                 "→".cyan(),
                 id_str,
                 latest.decoded,
+                crc_str.yellow(),
+                mac_str.magenta(),
                 time_str.to_string().bright_black()
             )?;
         } else {
@@ -301,15 +322,17 @@ impl Dashboard {
 
     fn draw_controller_rx_line(&self, stdout: &mut io::Stdout, id: CanId, name: &str) -> io::Result<()> {
         if let Some(latest) = self.controller_rx.get(&id) {
-            let time_str = latest.frame.timestamp.format("%H:%M:%S%.3f");
-            let id_str = format_can_id(latest.frame.id);
+            let time_str = latest.secured_frame.timestamp.format("%H:%M:%S%.3f");
+            let id_str = format_can_id(latest.secured_frame.can_id);
+            let crc_str = format!("CRC:{:08X}", latest.secured_frame.crc);
             writeln!(
                 stdout,
-                "\r    {} {} ID: {} | {} | {}",
+                "\r    {} {} ID: {} | {} | {} | {}",
                 format!("[{:14}]", name).bright_blue(),
                 "←".cyan(),
                 id_str,
                 latest.decoded,
+                crc_str.yellow(),
                 time_str.to_string().bright_black()
             )?;
         } else {
@@ -326,15 +349,19 @@ impl Dashboard {
 
     fn draw_actuator_line(&self, stdout: &mut io::Stdout, id: CanId, name: &str) -> io::Result<()> {
         if let Some(latest) = self.actuators.get(&id) {
-            let time_str = latest.frame.timestamp.format("%H:%M:%S%.3f");
-            let id_str = format_can_id(latest.frame.id);
+            let time_str = latest.secured_frame.timestamp.format("%H:%M:%S%.3f");
+            let id_str = format_can_id(latest.secured_frame.can_id);
+            let crc_str = format!("CRC:{:08X}", latest.secured_frame.crc);
+            let mac_str = format!("MAC:{}...", hex_encode(&latest.secured_frame.mac[..4]));
             writeln!(
                 stdout,
-                "\r  {} {} ID: {} | {} | {}",
+                "\r  {} {} ID: {} | {} | {} {} | {}",
                 format!("[{:12}]", name).red(),
                 "←".cyan(),
                 id_str,
                 latest.decoded,
+                crc_str.yellow(),
+                mac_str.magenta(),
                 time_str.to_string().bright_black()
             )?;
         } else {
@@ -357,29 +384,29 @@ fn format_can_id(id: CanId) -> ColoredString {
     }
 }
 
-fn decode_message(frame: &CanFrame) -> String {
-    match frame.id {
+fn decode_secured_message(secured_frame: &SecuredCanFrame) -> String {
+    match secured_frame.can_id {
         id if id == can_ids::WHEEL_SPEED_FL => {
-            let speed = encoding::decode_wheel_speed(&frame.data);
+            let speed = encoding::decode_wheel_speed(&secured_frame.data);
             format!("Speed: {:.2} rad/s", speed)
         },
         id if id == can_ids::WHEEL_SPEED_FR => {
-            let speed = encoding::decode_wheel_speed(&frame.data);
+            let speed = encoding::decode_wheel_speed(&secured_frame.data);
             format!("Speed: {:.2} rad/s", speed)
         },
         id if id == can_ids::WHEEL_SPEED_RL => {
-            let speed = encoding::decode_wheel_speed(&frame.data);
+            let speed = encoding::decode_wheel_speed(&secured_frame.data);
             format!("Speed: {:.2} rad/s", speed)
         },
         id if id == can_ids::WHEEL_SPEED_RR => {
-            let speed = encoding::decode_wheel_speed(&frame.data);
+            let speed = encoding::decode_wheel_speed(&secured_frame.data);
             format!("Speed: {:.2} rad/s", speed)
         },
         id if id == can_ids::ENGINE_RPM => {
-            if frame.data.len() >= 2 {
-                let rpm = encoding::decode_rpm(&frame.data);
-                let throttle = if frame.data.len() > 2 {
-                    encoding::decode_throttle(frame.data[2])
+            if secured_frame.data.len() >= 2 {
+                let rpm = encoding::decode_rpm(&secured_frame.data);
+                let throttle = if secured_frame.data.len() > 2 {
+                    encoding::decode_throttle(secured_frame.data[2])
                 } else {
                     0.0
                 };
@@ -389,41 +416,45 @@ fn decode_message(frame: &CanFrame) -> String {
             }
         },
         id if id == can_ids::ENGINE_THROTTLE => {
-            if !frame.data.is_empty() {
-                let throttle = encoding::decode_throttle(frame.data[0]);
+            if !secured_frame.data.is_empty() {
+                let throttle = encoding::decode_throttle(secured_frame.data[0]);
                 format!("Throttle: {:.0}%", throttle)
             } else {
                 "Invalid data".to_string()
             }
         },
         id if id == can_ids::STEERING_ANGLE => {
-            let angle = encoding::decode_steering_angle(&frame.data);
+            let angle = encoding::decode_steering_angle(&secured_frame.data);
             format!("Angle: {:.1}°", angle)
         },
         id if id == can_ids::STEERING_TORQUE => {
-            let torque = encoding::decode_steering_torque(&frame.data);
+            let torque = encoding::decode_steering_torque(&secured_frame.data);
             format!("Torque: {:.2} Nm", torque)
         },
         id if id == can_ids::BRAKE_COMMAND => {
-            if !frame.data.is_empty() {
-                let pressure = encoding::decode_brake_pressure(frame.data[0]);
+            if !secured_frame.data.is_empty() {
+                let pressure = encoding::decode_brake_pressure(secured_frame.data[0]);
                 format!("Pressure: {:.0}%", pressure)
             } else {
                 "Invalid data".to_string()
             }
         },
         id if id == can_ids::THROTTLE_COMMAND => {
-            if !frame.data.is_empty() {
-                let throttle = encoding::decode_throttle(frame.data[0]);
+            if !secured_frame.data.is_empty() {
+                let throttle = encoding::decode_throttle(secured_frame.data[0]);
                 format!("Position: {:.0}%", throttle)
             } else {
                 "Invalid data".to_string()
             }
         },
         id if id == can_ids::STEERING_COMMAND => {
-            let angle = encoding::decode_steering_angle(&frame.data);
+            let angle = encoding::decode_steering_angle(&secured_frame.data);
             format!("Angle: {:.1}°", angle)
         },
         _ => "Unknown".to_string()
     }
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{:02X}", b)).collect()
 }

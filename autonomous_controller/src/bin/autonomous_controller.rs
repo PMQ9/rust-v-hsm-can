@@ -1,12 +1,26 @@
 use colored::*;
 use std::time::Duration;
+use std::collections::HashMap;
 use tokio::sync::mpsc;
 use autonomous_vehicle_sim::network::{BusClient, NetMessage};
-use autonomous_vehicle_sim::types::{CanFrame, can_ids, encoding, VehicleState};
+use autonomous_vehicle_sim::types::{can_ids, encoding, VehicleState};
+use autonomous_vehicle_sim::hsm::{VirtualHSM, SecuredCanFrame, SignedFirmware};
+use autonomous_vehicle_sim::protected_memory::ProtectedMemory;
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
 const ECU_NAME: &str = "AUTONOMOUS_CTRL";
 const CONTROL_INTERVAL_MS: u64 = 100; // 10 Hz control loop
+const HSM_SEED: u64 = 0x2001; // Unique seed for autonomous controller
+
+// HSM seeds for all ECUs (in production, these would be securely stored)
+const ECU_SEEDS: &[(& str, u64)] = &[
+    ("WHEEL_FL", 0x1001),
+    ("WHEEL_FR", 0x1002),
+    ("WHEEL_RL", 0x1003),
+    ("WHEEL_RR", 0x1004),
+    ("ENGINE_ECU", 0x1005),
+    ("STEERING_SENSOR", 0x1006),
+];
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -15,26 +29,80 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("{}", "═══════════════════════════════════════════════════════".bright_blue().bold());
     println!();
 
+    // Initialize HSM
+    println!("{} Initializing Virtual HSM...", "→".cyan());
+    let mut hsm = VirtualHSM::new(ECU_NAME.to_string(), HSM_SEED);
+
+    // Register trusted ECUs (add their MAC keys to our HSM)
+    println!("{} Registering trusted ECUs...", "→".cyan());
+    for (ecu_name, seed) in ECU_SEEDS {
+        let trusted_hsm = VirtualHSM::new(ecu_name.to_string(), *seed);
+        hsm.add_trusted_ecu(ecu_name.to_string(), *trusted_hsm.get_symmetric_key());
+        println!("  ✓ Registered {}", ecu_name);
+    }
+
+    // Initialize protected memory with firmware
+    println!("{} Initializing protected memory...", "→".cyan());
+    let mut protected_mem = ProtectedMemory::new(ECU_NAME.to_string());
+
+    // Create and provision autonomous controller firmware
+    let firmware_code = b"AUTONOMOUS_CTRL_FIRMWARE_v1.0.0";
+    let firmware = SignedFirmware::new(
+        firmware_code.to_vec(),
+        "1.0.0".to_string(),
+        ECU_NAME.to_string(),
+        &hsm,
+    );
+
+    protected_mem.provision_firmware(firmware, &hsm)
+        .expect("Failed to provision firmware");
+
+    // Perform secure boot
+    println!("{} Performing secure boot...", "→".cyan());
+    protected_mem.secure_boot(&hsm)
+        .expect("Secure boot failed");
+
     println!("{} Connecting to CAN bus at {}...", "→".cyan(), BUS_ADDRESS);
     let client = BusClient::connect(BUS_ADDRESS, ECU_NAME.to_string()).await?;
     println!("{} Connected to CAN bus!", "✓".green().bold());
-    println!("{} Starting autonomous control loop ({}ms interval)", "→".cyan(), CONTROL_INTERVAL_MS);
+    println!("{} Starting secured autonomous control loop ({}ms interval)", "→".cyan(), CONTROL_INTERVAL_MS);
     println!();
 
     // Split client into reader and writer
     let (mut reader, mut writer) = client.split();
 
     // Channel for communication between receiver and control loop
-    let (frame_tx, mut frame_rx) = mpsc::channel::<CanFrame>(100);
+    let (frame_tx, mut frame_rx) = mpsc::channel::<SecuredCanFrame>(100);
 
-    // Spawn receiver task
+    // Clone HSM for the receiver task
+    let hsm_clone = hsm.clone();
+
+    // Spawn receiver task with MAC/CRC verification
     tokio::spawn(async move {
+        let mut verified_count = 0u64;
+        let mut failed_count = 0u64;
+
         loop {
             match reader.receive_message().await {
-                Ok(NetMessage::CanFrame(frame)) => {
-                    if frame_tx.send(frame).await.is_err() {
-                        break;
+                Ok(NetMessage::SecuredCanFrame(secured_frame)) => {
+                    // Verify MAC and CRC
+                    match secured_frame.verify(&hsm_clone) {
+                        Ok(_) => {
+                            verified_count += 1;
+                            if frame_tx.send(secured_frame).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            failed_count += 1;
+                            eprintln!("{} Security verification failed: {}", "⚠".yellow().bold(), e);
+                            eprintln!("  Verified: {}, Failed: {}", verified_count, failed_count);
+                        }
                     }
+                }
+                Ok(NetMessage::CanFrame(_)) => {
+                    // Legacy unencrypted frame - reject in secure mode
+                    eprintln!("{} Received unencrypted frame - rejecting!", "⚠".yellow().bold());
                 }
                 Err(_) => break,
                 _ => {}
@@ -46,40 +114,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut counter = 0u32;
 
     loop {
-        // Process all available sensor messages
-        while let Ok(frame) = frame_rx.try_recv() {
-            update_vehicle_state(&mut vehicle_state, &frame);
+        // Process all available sensor messages (secured)
+        while let Ok(secured_frame) = frame_rx.try_recv() {
+            update_vehicle_state(&mut vehicle_state, &secured_frame);
         }
 
-        // Run control algorithm
+        // Run control algorithm (firmware in protected memory)
         let (brake_cmd, throttle_cmd, steering_cmd) = compute_control_commands(&vehicle_state, counter);
 
-        // Send brake command
+        // Send brake command (secured)
         let brake_data = vec![encoding::encode_brake_pressure(brake_cmd)];
-        let brake_frame = CanFrame::new(
+        let brake_frame = SecuredCanFrame::new(
             can_ids::BRAKE_COMMAND,
             brake_data,
             ECU_NAME.to_string(),
+            &mut hsm,
         );
-        writer.send_frame(brake_frame).await?;
+        writer.send_secured_frame(brake_frame).await?;
 
-        // Send throttle command
+        // Send throttle command (secured)
         let throttle_data = vec![encoding::encode_throttle(throttle_cmd)];
-        let throttle_frame = CanFrame::new(
+        let throttle_frame = SecuredCanFrame::new(
             can_ids::THROTTLE_COMMAND,
             throttle_data,
             ECU_NAME.to_string(),
+            &mut hsm,
         );
-        writer.send_frame(throttle_frame).await?;
+        writer.send_secured_frame(throttle_frame).await?;
 
-        // Send steering command
+        // Send steering command (secured)
         let steering_data = encoding::encode_steering_angle(steering_cmd);
-        let steering_frame = CanFrame::new(
+        let steering_frame = SecuredCanFrame::new(
             can_ids::STEERING_COMMAND,
             steering_data.to_vec(),
             ECU_NAME.to_string(),
+            &mut hsm,
         );
-        writer.send_frame(steering_frame).await?;
+        writer.send_secured_frame(steering_frame).await?;
 
         if counter % 10 == 0 {
             println!(
@@ -105,37 +176,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 }
 
-fn update_vehicle_state(state: &mut VehicleState, frame: &CanFrame) {
-    match frame.id {
+fn update_vehicle_state(state: &mut VehicleState, secured_frame: &SecuredCanFrame) {
+    // Extract data from secured frame (already verified)
+    match secured_frame.can_id {
         id if id == can_ids::WHEEL_SPEED_FL => {
-            state.wheel_speeds[0] = encoding::decode_wheel_speed(&frame.data);
+            state.wheel_speeds[0] = encoding::decode_wheel_speed(&secured_frame.data);
         },
         id if id == can_ids::WHEEL_SPEED_FR => {
-            state.wheel_speeds[1] = encoding::decode_wheel_speed(&frame.data);
+            state.wheel_speeds[1] = encoding::decode_wheel_speed(&secured_frame.data);
         },
         id if id == can_ids::WHEEL_SPEED_RL => {
-            state.wheel_speeds[2] = encoding::decode_wheel_speed(&frame.data);
+            state.wheel_speeds[2] = encoding::decode_wheel_speed(&secured_frame.data);
         },
         id if id == can_ids::WHEEL_SPEED_RR => {
-            state.wheel_speeds[3] = encoding::decode_wheel_speed(&frame.data);
+            state.wheel_speeds[3] = encoding::decode_wheel_speed(&secured_frame.data);
         },
         id if id == can_ids::ENGINE_RPM => {
-            state.engine_rpm = encoding::decode_rpm(&frame.data);
+            state.engine_rpm = encoding::decode_rpm(&secured_frame.data);
         },
         id if id == can_ids::ENGINE_THROTTLE => {
-            if !frame.data.is_empty() {
-                state.throttle_position = encoding::decode_throttle(frame.data[0]);
+            if !secured_frame.data.is_empty() {
+                state.throttle_position = encoding::decode_throttle(secured_frame.data[0]);
             }
         },
         id if id == can_ids::STEERING_ANGLE => {
-            state.steering_angle = encoding::decode_steering_angle(&frame.data);
+            state.steering_angle = encoding::decode_steering_angle(&secured_frame.data);
         },
         id if id == can_ids::STEERING_TORQUE => {
-            state.steering_torque = encoding::decode_steering_torque(&frame.data);
+            state.steering_torque = encoding::decode_steering_torque(&secured_frame.data);
         },
         _ => {}
     }
-    state.timestamp = Some(frame.timestamp);
+    state.timestamp = Some(secured_frame.timestamp);
 }
 
 fn compute_control_commands(state: &VehicleState, counter: u32) -> (f32, f32, f32) {
