@@ -2,6 +2,18 @@
 
 ## 2025-11-04
 
+### b6e91423 - inital implementation of autonomous controller
+- Moved original implementation to `basic/` folder
+- Created `autonomous_controller/` project with 9-ECU automotive architecture:
+  - Sensors: 4x wheel speed, engine, steering
+  - Controller: Autonomous decision-making
+  - Actuators: Brake and steering control
+- Automotive CAN IDs (0x100-0x3FF), data encoding/decoding helpers
+- Safety features: Brake/steering limiting, anomaly detection
+- Realistic simulation: 10-20 Hz broadcasts, noise injection, smooth actuator transitions
+- Enhanced monitor with automotive message decoding
+- Comprehensive documentation and security research guide
+
 ### 5eeca23 - update readme
 - Updated README with architecture diagram, build/run instructions
 - Created demo binary
