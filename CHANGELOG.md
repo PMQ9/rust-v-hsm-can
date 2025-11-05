@@ -2,6 +2,15 @@
 
 ## 2025-11-05
 
+### Attack Fallback - Autonomous Controller Shutdown
+- Implemented automatic controller deactivation when attack is detected
+- **Safe Mode Features**:
+  - Controller STOPS sending all commands (brake, throttle, steering) when attack detected
+  - Continues monitoring sensor inputs but takes NO ACTION
+  - Requires manual restart to resume operation
+- **Thread-safe attack detection**: Uses AtomicBool for real-time coordination between receiver and control loop
+- **Safety-first design**: Prevents compromised commands from reaching actuators
+
 ### Unsecured Frame Attack Detection
 - Enhanced attack detection to identify frames with MAC=0 as unsecured frame injection attacks
 - **Monitor displays real-time attack**:

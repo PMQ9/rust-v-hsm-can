@@ -67,7 +67,7 @@ fn main() {
     match Command::new("cargo")
         .args(&["run", "--bin", "autonomous_controller"])
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())  // Allow stderr to pass through for attack warnings
         .spawn()
     {
         Ok(child) => {
