@@ -1,0 +1,67 @@
+[package]
+name = "autonomous_vehicle_sim"
+version = "0.1.0"
+edition = "2024"
+default-run = "autonomous_vehicle_sim"
+
+[dependencies]
+tokio = { version = "1.42", features = ["full"] }
+crossterm = "0.28"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+colored = "2.1"
+rand = "0.8"
+ctrlc = "3.4"
+
+# Main launcher
+[[bin]]
+name = "autonomous_vehicle_sim"
+path = "src/main.rs"
+
+# Bus infrastructure
+[[bin]]
+name = "bus_server"
+path = "src/bin/bus_server.rs"
+
+[[bin]]
+name = "monitor"
+path = "src/bin/monitor.rs"
+
+# Sensor ECUs
+[[bin]]
+name = "wheel_fl"
+path = "src/bin/wheel_fl.rs"
+
+[[bin]]
+name = "wheel_fr"
+path = "src/bin/wheel_fr.rs"
+
+[[bin]]
+name = "wheel_rl"
+path = "src/bin/wheel_rl.rs"
+
+[[bin]]
+name = "wheel_rr"
+path = "src/bin/wheel_rr.rs"
+
+[[bin]]
+name = "engine_ecu"
+path = "src/bin/engine_ecu.rs"
+
+[[bin]]
+name = "steering_sensor"
+path = "src/bin/steering_sensor.rs"
+
+# Controller ECUs
+[[bin]]
+name = "autonomous_controller"
+path = "src/bin/autonomous_controller.rs"
+
+[[bin]]
+name = "brake_controller"
+path = "src/bin/brake_controller.rs"
+
+[[bin]]
+name = "steering_controller"
+path = "src/bin/steering_controller.rs"
