@@ -93,6 +93,23 @@ A realistic CAN bus simulation for autonomous vehicle development and security r
 - **Secure Boot**: Firmware signature verification
 - **Protected Memory**: Simulated MPU-protected firmware storage
 
+### HSM Cryptographic Keys
+
+Each ECU's HSM contains the following 256-bit keys:
+
+| Key Name | Purpose |
+|----------|---------|
+| **Master Key** | Root key for deriving other keys (key hierarchy root) |
+| **Secure Boot Key** | Signs/verifies firmware fingerprints during secure boot |
+| **Firmware Update Key** | Authorizes firmware update operations |
+| **Symmetric Comm Key** | Generates HMAC-SHA256 MACs for CAN message authentication |
+| **Key Encryption Key** | Encrypts keys during secure key exchange/provisioning |
+| **RNG Seed Key** | Seeds deterministic RNG for nonces and challenges |
+| **Seed/Key Access Token** | Authorization token for diagnostic seed/key access |
+| **MAC Verification Keys** | Per-ECU keys for verifying MACs from trusted ECUs |
+
+**Key Distribution**: In this simulation, ECUs share symmetric communication keys to verify each other's MACs. In production, keys would be provisioned during manufacturing and stored in tamper-resistant hardware.
+
 ### Single Command Launch (Recommended)
 
 ```bash
@@ -270,11 +287,27 @@ autonomous_controller/
 7. Monitor: Observes all traffic, decodes and displays
 ```
 
+## Security Features
+
+### Message Authentication Flow
+
+1. **Sending**: ECU creates CAN frame → HSM generates MAC (HMAC-SHA256) + CRC32 → SecuredCanFrame broadcast
+2. **Receiving**: ECU receives SecuredCanFrame → HSM verifies CRC32 (fast check) → HSM verifies MAC (cryptographic) → Accept/Reject
+3. **Anti-Replay**: Each message includes a session counter to prevent replay attacks
+
+### Secure Boot Process
+
+Each ECU performs secure boot on startup:
+1. Load firmware binary from protected memory
+2. Calculate SHA256 fingerprint of firmware
+3. Verify HMAC signature using Secure Boot Key
+4. If valid, execute firmware; if invalid, halt
+
 ## Future Enhancements
 
-- [ ] V-HSM integration for message authentication
-- [ ] Cryptographic key management
-- [ ] Attack scenario scripts
+- [x] V-HSM integration for message authentication
+- [x] Cryptographic key management
+- [ ] Attack scenario scripts (replay, spoofing, DoS)
 - [ ] Performance metrics and logging
 - [ ] GUI-based monitor
 - [ ] CAN FD support

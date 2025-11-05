@@ -98,6 +98,20 @@ All components connect to a shared broadcast bus. Any frame sent by any ECU is r
 - Anomaly detection for wheel speed discrepancies
 - Real-time dashboard monitor with security status
 
+### HSM Security Keys
+
+Each ECU's Virtual HSM manages 7 cryptographic keys (all 256-bit):
+
+- **Master Key**: Root key for key derivation hierarchy
+- **Secure Boot Key**: Firmware signature verification
+- **Firmware Update Key**: Firmware update authorization
+- **Symmetric Comm Key**: HMAC-SHA256 MAC generation for CAN messages
+- **Key Encryption Key**: Secure key exchange/provisioning
+- **RNG Seed Key**: Deterministic random number generation
+- **Seed/Key Access Token**: Diagnostic access control (UDS seed/key)
+
+Each ECU also maintains **MAC Verification Keys** for all trusted ECUs on the network.
+
 See [autonomous_controller/README.md](autonomous_controller/README.md) for complete documentation.
 
 ## Build
