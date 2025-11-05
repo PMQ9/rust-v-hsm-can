@@ -13,10 +13,11 @@ This repository contains two CAN bus simulators:
 
 ## Quick Start
 
-### Option A: Autonomous Vehicle Simulator
+### Option A: Autonomous Vehicle Simulator (with HSM security)
 ```bash
 cd autonomous_controller
 cargo run
+# Press 'q' to quit
 ```
 
 ### Option B: Basic CAN Simulator
@@ -88,12 +89,14 @@ All components connect to a shared broadcast bus. Any frame sent by any ECU is r
 **9 ECUs**: wheel_fl, wheel_fr, wheel_rl, wheel_rr, engine_ecu, steering_sensor, autonomous_controller, brake_controller, steering_controller
 
 **Features**:
+- Virtual HSM (Hardware Security Module) with HMAC-SHA256 MAC and CRC32 verification
+- Secure boot and protected memory for all ECUs
 - Automotive CAN message IDs (0x100-0x3FF range)
 - Periodic sensor broadcasts at 10-20 Hz
 - Autonomous control loop with speed control and path following
 - Safety features: brake pressure limiting, steering rate limiting
 - Anomaly detection for wheel speed discrepancies
-- Enhanced monitor with automotive message decoding
+- Real-time dashboard monitor with security status
 
 See [autonomous_controller/README.md](autonomous_controller/README.md) for complete documentation.
 
@@ -135,6 +138,8 @@ rust-v-hsm-can/
 │   │   ├── can_bus.rs         # Virtual CAN bus
 │   │   ├── ecu.rs             # ECU emulator
 │   │   ├── network.rs         # TCP networking
+│   │   ├── hsm.rs             # Virtual HSM with cryptography
+│   │   ├── protected_memory.rs # Secure boot and memory
 │   │   └── bin/
 │   │       ├── bus_server.rs           # Bus server
 │   │       ├── monitor.rs              # Enhanced monitor
@@ -155,9 +160,9 @@ rust-v-hsm-can/
 
 ## Future Development
 
-- [ ] Implement V-HSM cryptographic layer
-- [ ] Add message authentication codes (MAC)
-- [ ] Key management system
+- [x] V-HSM cryptographic layer (HMAC-SHA256 + CRC32)
+- [x] Message authentication codes (MAC)
+- [x] Key management system
 - [ ] Attack scenario scripts
 - [ ] Intrusion detection system
 - [ ] Performance benchmarks
