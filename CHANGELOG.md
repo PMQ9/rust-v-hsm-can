@@ -1,8 +1,35 @@
 # Changelog
 
+## 2025-11-05
+
+### Monitor Display Improvements
+- Added raw data column showing 4 blocks of 2 bytes (standard CAN format)
+- Fixed column alignment across all sections
+
+### Fixed Monitor Stopping at ~14k Frames
+- Removed mutex contention during network I/O in bus_server (each client owns its writer)
+- Added broadcast lag recovery
+- Increased buffer sizes (bus: 10k, monitor: 1k)
+
+### SecuredCanFrame Support
+- Bus server broadcasts `SecuredCanFrame` instead of `CanFrame`
+- Actuator ECUs filter frames by CAN ID before verification
+
+### HSM Security Migration Complete
+- All 9 ECUs use HSM with HMAC-SHA256 MAC and CRC32 verification
+- Monitor displays security status with CRC/MAC values
+
+### Virtual HSM Implementation
+- Key management: MasterKey, SecureBootKey, SymmetricCommKey, etc.
+- HMAC-SHA256 MAC generation with anti-replay counters
+- CRC32 integrity checking
+- Secure boot with firmware signature verification
+- Protected memory system (simulated MPU)
+- All ECUs perform secure boot before operation
+
 ## 2025-11-04
 
-### Latest - Enhanced dashboard and single-command launcher
+### Enhanced dashboard and single-command launcher
 - Implemented grouped dashboard monitor with functional organization:
   - SENSORS section: Shows latest data from all sensor ECUs (wheels, engine, steering)
   - CONTROLLER section: Displays autonomous controller TX (commands sent) and RX (sensor data received)

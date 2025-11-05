@@ -87,19 +87,27 @@ A realistic CAN bus simulation for autonomous vehicle development and security r
 
 ## Quick Start
 
-### Single Command Launch
+**All ECUs now use Virtual-HSM (Hardware Security Module) with:**
+- **MAC**: HMAC-SHA256 message authentication
+- **CRC**: CRC32 integrity verification
+- **Secure Boot**: Firmware signature verification
+- **Protected Memory**: Simulated MPU-protected firmware storage
+
+### Single Command Launch (Recommended)
 
 ```bash
 cd autonomous_controller
 cargo run
+# or
+./run.sh
 ```
 
 This will:
 1. Start the CAN bus server in the background
-2. Launch all 6 sensor ECUs (wheels, engine, steering)
-3. Start the autonomous controller
-4. Launch 2 actuator controllers (brake, steering)
-5. Display a grouped dashboard showing real-time CAN traffic
+2. Launch all 6 HSM-secured sensor ECUs (wheels, engine, steering)
+3. Start the HSM-secured autonomous controller
+4. Launch 2 HSM-secured actuator controllers (brake, steering)
+5. Display a real-time dashboard showing secured CAN traffic with MAC and CRC
 
 **Press 'q' to quit** - all components will shut down cleanly.
 

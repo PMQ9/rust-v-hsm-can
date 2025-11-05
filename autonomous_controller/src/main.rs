@@ -16,6 +16,7 @@ fn main() {
     match Command::new("cargo")
         .args(&["run", "--bin", "bus_server"])
         .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn()
     {
         Ok(child) => {
@@ -47,7 +48,7 @@ fn main() {
         match Command::new("cargo")
             .args(&["run", "--bin", sensor])
             .stdout(Stdio::null())
-            // Keep stderr visible to see any errors
+            .stderr(Stdio::null())
             .spawn()
         {
             Ok(child) => {
@@ -66,6 +67,7 @@ fn main() {
     match Command::new("cargo")
         .args(&["run", "--bin", "autonomous_controller"])
         .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn()
     {
         Ok(child) => {
@@ -89,6 +91,7 @@ fn main() {
         match Command::new("cargo")
             .args(&["run", "--bin", actuator])
             .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .spawn()
         {
             Ok(child) => {

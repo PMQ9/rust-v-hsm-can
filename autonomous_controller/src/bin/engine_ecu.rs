@@ -1,11 +1,14 @@
 use colored::*;
 use std::time::Duration;
 use autonomous_vehicle_sim::network::BusClient;
-use autonomous_vehicle_sim::types::{CanFrame, can_ids, encoding};
+use autonomous_vehicle_sim::types::{can_ids, encoding};
+use autonomous_vehicle_sim::hsm::{VirtualHSM, SecuredCanFrame, SignedFirmware};
+use autonomous_vehicle_sim::protected_memory::ProtectedMemory;
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
 const ECU_NAME: &str = "ENGINE_ECU";
 const UPDATE_INTERVAL_MS: u64 = 50; // 20 Hz
+const HSM_SEED: u64 = 0x1005; // Unique seed for this ECU
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -14,11 +17,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("{}", "═══════════════════════════════════════".yellow().bold());
     println!();
 
+    // Initialize HSM
+    println!("{} Initializing Virtual HSM...", "→".cyan());
+    let mut hsm = VirtualHSM::new(ECU_NAME.to_string(), HSM_SEED);
+
+    // Initialize protected memory
+    println!("{} Initializing protected memory...", "→".cyan());
+    let mut protected_mem = ProtectedMemory::new(ECU_NAME.to_string());
+
+    // Create and provision firmware
+    let firmware_code = b"ENGINE_ECU_FIRMWARE_v1.0.0";
+    let firmware = SignedFirmware::new(
+        firmware_code.to_vec(),
+        "1.0.0".to_string(),
+        ECU_NAME.to_string(),
+        &hsm,
+    );
+
+    protected_mem.provision_firmware(firmware, &hsm)
+        .expect("Failed to provision firmware");
+
+    // Perform secure boot
+    println!("{} Performing secure boot...", "→".cyan());
+    protected_mem.secure_boot(&hsm)
+        .expect("Secure boot failed");
+
     println!("{} Connecting to CAN bus at {}...", "→".cyan(), BUS_ADDRESS);
-    let mut client = BusClient::connect(BUS_ADDRESS, ECU_NAME.to_string()).await?;
+    let client = BusClient::connect(BUS_ADDRESS, ECU_NAME.to_string()).await?;
     println!("{} Connected to CAN bus!", "✓".green().bold());
-    println!("{} Sending engine data every {}ms", "→".cyan(), UPDATE_INTERVAL_MS);
+    println!("{} Sending secured engine data every {}ms", "→".cyan(), UPDATE_INTERVAL_MS);
     println!();
+
+    // Split client for concurrent reading/writing
+    let (_reader, mut writer) = client.split();
 
     let mut rpm = 800.0f32; // Idle RPM
     let mut throttle = 0.0f32; // 0-100%
@@ -40,23 +71,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let target_rpm = 800.0 + (throttle / 100.0) * 5200.0; // 800-6000 RPM
         rpm += (target_rpm - rpm) * 0.1; // Smooth transition
 
-        // Send RPM
+        // Send RPM (secured)
         let rpm_data = encoding::encode_rpm(rpm);
-        let rpm_frame = CanFrame::new(
+        let rpm_frame = SecuredCanFrame::new(
             can_ids::ENGINE_RPM,
             rpm_data.to_vec(),
             ECU_NAME.to_string(),
+            &mut hsm,
         );
-        client.send_frame(rpm_frame).await?;
+        writer.send_secured_frame(rpm_frame).await?;
 
-        // Send throttle position
+        // Send throttle position (secured)
         let throttle_data = vec![encoding::encode_throttle(throttle)];
-        let throttle_frame = CanFrame::new(
+        let throttle_frame = SecuredCanFrame::new(
             can_ids::ENGINE_THROTTLE,
             throttle_data,
             ECU_NAME.to_string(),
+            &mut hsm,
         );
-        client.send_frame(throttle_frame).await?;
+        writer.send_secured_frame(throttle_frame).await?;
 
         if counter % 20 == 0 {
             println!(
