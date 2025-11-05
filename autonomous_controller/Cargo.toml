@@ -2,6 +2,7 @@
 name = "autonomous_vehicle_sim"
 version = "0.1.0"
 edition = "2024"
+default-run = "autonomous_vehicle_sim"
 
 [dependencies]
 tokio = { version = "1.42", features = ["full"] }
@@ -11,6 +12,12 @@ serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 colored = "2.1"
 rand = "0.8"
+ctrlc = "3.4"
+
+# Main launcher
+[[bin]]
+name = "autonomous_vehicle_sim"
+path = "src/main.rs"
 
 # Bus infrastructure
 [[bin]]

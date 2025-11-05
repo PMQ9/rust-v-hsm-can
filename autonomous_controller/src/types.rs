@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// CAN Frame identifier (11-bit standard or 29-bit extended)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CanId {
     Standard(u16), // 11-bit (0x000 - 0x7FF)
     Extended(u32), // 29-bit (0x00000000 - 0x1FFFFFFF)
