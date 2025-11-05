@@ -85,7 +85,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (mut reader, _writer) = client.split();
 
     // Create a channel to receive frames from the network task
-    let (frame_tx, mut frame_rx) = mpsc::channel::<SecuredCanFrame>(100);
+    // Use larger capacity to handle bursts from multiple ECUs (9 ECUs @ 10Hz = ~100 fps)
+    let (frame_tx, mut frame_rx) = mpsc::channel::<SecuredCanFrame>(1000);
 
     // Spawn network reader task (monitoring all secured frames)
     tokio::spawn(async move {

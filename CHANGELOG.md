@@ -2,6 +2,11 @@
 
 ## 2025-11-05
 
+### Fixed Monitor Stopping at ~14k Frames
+- Removed mutex contention during network I/O in bus_server (each client owns its writer)
+- Added broadcast lag recovery
+- Increased buffer sizes (bus: 10k, monitor: 1k)
+
 ### SecuredCanFrame Support
 - Bus server broadcasts `SecuredCanFrame` instead of `CanFrame`
 - Actuator ECUs filter frames by CAN ID before verification

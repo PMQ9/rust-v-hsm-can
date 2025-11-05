@@ -9,7 +9,7 @@ use autonomous_vehicle_sim::types::CanFrame;
 use autonomous_vehicle_sim::hsm::SecuredCanFrame;
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
-const BUFFER_SIZE: usize = 1000;
+const BUFFER_SIZE: usize = 10000;  // Increased for 9 ECUs @ 10Hz (~100 fps) = ~100 seconds of buffering
 
 type ClientMap = Arc<Mutex<HashMap<String, tokio::net::tcp::OwnedWriteHalf>>>;
 
@@ -86,7 +86,7 @@ async fn handle_client(
         }
     };
 
-    // Store the write half for this client
+    // Store client name for tracking
     {
         let mut clients_lock = clients.lock().await;
         clients_lock.insert(client_name.clone(), write_half);
@@ -95,29 +95,51 @@ async fn handle_client(
     // Subscribe to CAN frames
     let mut rx = tx.subscribe();
 
+    // Remove writer from map and give ownership to forwarding task
+    // This prevents mutex contention during I/O operations
+    let mut writer = {
+        let mut clients_lock = clients.lock().await;
+        clients_lock.remove(&client_name).unwrap()
+    };
+
     // Spawn a task to forward secured CAN frames to this client
     let client_name_clone = client_name.clone();
-    let clients_clone = Arc::clone(&clients);
     tokio::spawn(async move {
-        while let Ok(secured_frame) = rx.recv().await {
-            // Get the write half for this client
-            let mut clients_lock = clients_clone.lock().await;
-            if let Some(writer) = clients_lock.get_mut(&client_name_clone) {
-                let msg = NetMessage::SecuredCanFrame(secured_frame);
-                let json = match serde_json::to_string(&msg) {
-                    Ok(j) => j,
-                    Err(_) => continue,
-                };
+        loop {
+            // Handle broadcast receive with lag recovery
+            let secured_frame = match rx.recv().await {
+                Ok(frame) => frame,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    eprintln!(
+                        "{} Client {} lagged, skipped {} frames (recovering...)",
+                        "⚠".yellow(),
+                        client_name_clone.bright_cyan(),
+                        skipped
+                    );
+                    // Continue receiving after lag instead of dying
+                    continue;
+                }
+                Err(_) => {
+                    // Channel closed, exit task
+                    break;
+                }
+            };
 
-                if writer.write_all(json.as_bytes()).await.is_err() {
-                    break;
-                }
-                if writer.write_all(b"\n").await.is_err() {
-                    break;
-                }
-                if writer.flush().await.is_err() {
-                    break;
-                }
+            // Write directly to this client's writer (NO MUTEX!)
+            let msg = NetMessage::SecuredCanFrame(secured_frame);
+            let json = match serde_json::to_string(&msg) {
+                Ok(j) => j,
+                Err(_) => continue,
+            };
+
+            if writer.write_all(json.as_bytes()).await.is_err() {
+                break;
+            }
+            if writer.write_all(b"\n").await.is_err() {
+                break;
+            }
+            if writer.flush().await.is_err() {
+                break;
             }
         }
     });
@@ -184,11 +206,7 @@ async fn handle_client(
         }
     }
 
-    // Remove client from map
-    {
-        let mut clients_lock = clients.lock().await;
-        clients_lock.remove(&client_name);
-    }
+    // Client already removed from map (writer was moved to forwarding task)
 
     println!(
         "{} {} disconnected (sent {} frames)",
