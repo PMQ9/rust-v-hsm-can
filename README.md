@@ -54,8 +54,6 @@ cargo run --bin input_ecu
 # Example: 123 01 02 03 04
 ```
 
-See [MULTI_TERMINAL_GUIDE.md](MULTI_TERMINAL_GUIDE.md) for details.
-
 ## Components
 
 - `vhsm-can` - Main V-HSM application
