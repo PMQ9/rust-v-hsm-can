@@ -4,6 +4,46 @@ use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
+
+/// Reasons why MAC verification can fail
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MacFailureReason {
+    /// No MAC verification key registered for the source ECU
+    NoKeyRegistered,
+    /// HMAC cryptographic verification failed (tampered data or wrong key)
+    CryptoFailure,
+}
+
+impl fmt::Display for MacFailureReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MacFailureReason::NoKeyRegistered => write!(f, "No MAC key registered for source ECU"),
+            MacFailureReason::CryptoFailure => write!(f, "HMAC cryptographic verification failed"),
+        }
+    }
+}
+
+/// Structured verification error types
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VerifyError {
+    /// Frame has no MAC/CRC (all zeros) - indicates unsecured/injected frame
+    UnsecuredFrame,
+    /// CRC32 checksum mismatch - indicates data corruption or tampering
+    CrcMismatch,
+    /// MAC verification failed - indicates authentication failure
+    MacMismatch(MacFailureReason),
+}
+
+impl fmt::Display for VerifyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            VerifyError::UnsecuredFrame => write!(f, "Unsecured frame (no MAC/CRC)"),
+            VerifyError::CrcMismatch => write!(f, "CRC verification failed"),
+            VerifyError::MacMismatch(reason) => write!(f, "MAC verification failed: {}", reason),
+        }
+    }
+}
 
 /// Virtual Hardware Security Module
 /// Provides cryptographic key management and operations for secure CAN communication
@@ -111,13 +151,12 @@ impl VirtualHSM {
     }
 
     /// Verify MAC using trusted ECU's key
-    pub fn verify_mac(&self, data: &[u8], mac: &[u8; 32], session_counter: u64, source_ecu: &str) -> bool {
+    pub fn verify_mac(&self, data: &[u8], mac: &[u8; 32], session_counter: u64, source_ecu: &str) -> Result<(), MacFailureReason> {
         // Get the MAC key for the source ECU
         let key = match self.mac_verification_keys.get(source_ecu) {
             Some(k) => k,
             None => {
-                eprintln!("No MAC key registered for ECU: {}", source_ecu);
-                return false;
+                return Err(MacFailureReason::NoKeyRegistered);
             }
         };
 
@@ -128,7 +167,8 @@ impl VirtualHSM {
         expected_mac.update(&session_counter.to_le_bytes());
 
         // Constant-time comparison
-        expected_mac.verify_slice(mac).is_ok()
+        expected_mac.verify_slice(mac)
+            .map_err(|_| MacFailureReason::CryptoFailure)
     }
 
     /// Calculate CRC32 checksum
@@ -280,10 +320,10 @@ impl SecuredCanFrame {
     }
 
     /// Verify the frame's MAC and CRC
-    pub fn verify(&self, hsm: &VirtualHSM) -> Result<(), String> {
+    pub fn verify(&self, hsm: &VirtualHSM) -> Result<(), VerifyError> {
         // Check if MAC is all zeros - this indicates an unsecured frame
         if self.mac == [0u8; 32] && self.crc == 0 {
-            return Err(format!("UNSECURED FRAME from {} - NO MAC/CRC (possible injection attack)", self.source));
+            return Err(VerifyError::UnsecuredFrame);
         }
 
         // Reconstruct data for verification
@@ -294,13 +334,12 @@ impl SecuredCanFrame {
 
         // Verify CRC first (faster check)
         if !hsm.verify_crc(&verify_data, self.crc) {
-            return Err(format!("CRC verification failed for frame from {}", self.source));
+            return Err(VerifyError::CrcMismatch);
         }
 
         // Verify MAC (cryptographic check)
-        if !hsm.verify_mac(&verify_data, &self.mac, self.session_counter, &self.source) {
-            return Err(format!("MAC verification failed for frame from {}", self.source));
-        }
+        hsm.verify_mac(&verify_data, &self.mac, self.session_counter, &self.source)
+            .map_err(|reason| VerifyError::MacMismatch(reason))?;
 
         Ok(())
     }
@@ -382,7 +421,7 @@ mod tests {
         let counter = hsm1.get_session_counter();
         let mac = hsm1.generate_mac(data, counter);
 
-        assert!(hsm2.verify_mac(data, &mac, counter, "ECU1"));
+        assert!(hsm2.verify_mac(data, &mac, counter, "ECU1").is_ok());
     }
 
     #[test]

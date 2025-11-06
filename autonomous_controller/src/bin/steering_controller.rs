@@ -105,16 +105,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 }
                             }
                             Err(e) => {
-                                // Determine error type and record it
+                                // Record the error with proper type classification
                                 let should_continue = {
                                     let mut detector = detector_clone.lock().unwrap();
-                                    let error_type = if e.contains("UNSECURED FRAME") {
-                                        ValidationError::UnsecuredFrame
-                                    } else if e.contains("CRC") {
-                                        ValidationError::CrcMismatch
-                                    } else {
-                                        ValidationError::MacMismatch
-                                    };
+                                    let error_type = ValidationError::from_verify_error(&e);
                                     detector.record_error(error_type, &secured_frame.source)
                                 }; // Lock is dropped here
 

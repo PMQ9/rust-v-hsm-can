@@ -20,6 +20,17 @@ pub enum ValidationError {
     UnsecuredFrame,
 }
 
+impl ValidationError {
+    /// Convert from VerifyError to ValidationError
+    pub fn from_verify_error(error: &crate::hsm::VerifyError) -> Self {
+        match error {
+            crate::hsm::VerifyError::UnsecuredFrame => ValidationError::UnsecuredFrame,
+            crate::hsm::VerifyError::CrcMismatch => ValidationError::CrcMismatch,
+            crate::hsm::VerifyError::MacMismatch(_) => ValidationError::MacMismatch,
+        }
+    }
+}
+
 impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

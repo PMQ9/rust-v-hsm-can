@@ -2,6 +2,24 @@
 
 ## 2025-11-05
 
+### Threshold-Testing Attack Scenarios
+- Added two new attack injection variants to test MAC error detection thresholds:
+  - `attack_injection_short_cycles`: Sends 3 cycles of 2 malicious brake commands each with 2-second delays between cycles (below 3-frame threshold, should NOT trigger error)
+  - `attack_injection_burst`: Sends 3 cycles of 4 malicious brake commands (exceeds 3-frame threshold, should trigger error)
+
+### Error Handling Architecture Improvements
+- **Fixed autonomous_controller to use AttackDetector**: Replaced simple AtomicBool flag with proper threshold-based AttackDetector like actuator ECUs, ensuring consistent error handling across all ECUs
+- **Implemented structured error types**: Replaced string-based error handling with type-safe VerifyError and MacFailureReason enums
+  - `VerifyError`: UnsecuredFrame, CrcMismatch, MacMismatch(reason)
+  - `MacFailureReason`: NoKeyRegistered, CryptoFailure
+- **Enhanced MAC verification diagnostics**: verify_mac() now returns Result with specific failure reason instead of bool
+- **Eliminated fragile string matching**: All ECUs now use ValidationError::from_verify_error() for type-safe error classification
+- **Key benefits**:
+  - Autonomous controller now properly tolerates up to 3 consecutive MAC errors (consistent with actuators)
+  - Better debugging: Can distinguish "no key registered" from "crypto failure" MAC errors
+  - CRC failures no longer mask MAC verification issues in diagnostics
+  - All ECUs use identical threshold-based attack detection patterns
+
 ### Attack Fallback - Autonomous Controller Shutdown
 - Implemented automatic controller deactivation when attack is detected
 - **Safe Mode Features**:

@@ -88,3 +88,11 @@ path = "src/bin/attacks/attack_flooding.rs"
 [[bin]]
 name = "attack_spoofing"
 path = "src/bin/attacks/attack_spoofing.rs"
+
+[[bin]]
+name = "attack_injection_short_cycles"
+path = "src/bin/attacks/attack_injection_short_cycles.rs"
+
+[[bin]]
+name = "attack_injection_burst"
+path = "src/bin/attacks/attack_injection_burst.rs"
