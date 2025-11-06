@@ -2,6 +2,11 @@
 
 ## 2025-11-05
 
+### Threshold-Testing Attack Scenarios
+- Added two new attack injection variants to test MAC error detection thresholds:
+  - `attack_injection_short_cycles`: Sends 3 cycles of 2 malicious brake commands each with 2-second delays between cycles (below 3-frame threshold, should NOT trigger error)
+  - `attack_injection_burst`: Sends 1 cycle of 4 malicious brake commands (exceeds 3-frame threshold, should trigger error)
+
 ### Error Handling Architecture Improvements
 - **Fixed autonomous_controller to use AttackDetector**: Replaced simple AtomicBool flag with proper threshold-based AttackDetector like actuator ECUs, ensuring consistent error handling across all ECUs
 - **Implemented structured error types**: Replaced string-based error handling with type-safe VerifyError and MacFailureReason enums
