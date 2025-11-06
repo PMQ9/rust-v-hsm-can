@@ -124,6 +124,15 @@ Each ECU's Virtual HSM manages 7 cryptographic keys (all 256-bit):
 
 Each ECU also maintains **MAC Verification Keys** for all trusted ECUs on the network.
 
+### Attack Detection
+
+All ECUs use threshold-based attack detection with structured error types:
+- **MAC errors**: Tolerates 3 consecutive failures (strict cryptographic security)
+- **CRC errors**: Tolerates 5 consecutive failures (noise/corruption tolerance)
+- **Unsecured frames**: Triggers immediately (no tolerance for injection attacks)
+
+Error counters reset automatically on successful frame validation, allowing recovery from transient failures while detecting sustained attacks.
+
 See [autonomous_controller/README.md](autonomous_controller/README.md) for complete documentation.
 
 ## Build
@@ -190,6 +199,7 @@ rust-v-hsm-can/
 - [x] Message authentication codes (MAC)
 - [x] Key management system
 - [x] Attack scenario scripts
-- [ ] Intrusion detection system
+- [x] Intrusion detection system
 - [ ] Performance benchmarks
 - [ ] CAN FD support
+- [ ] Deploy and test on hardware cluster
