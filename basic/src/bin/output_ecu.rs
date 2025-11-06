@@ -43,7 +43,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     };
 
-    writeln!(stdout, "\r{}Connected to CAN bus!{}\r", "✓ ".green(), "".clear())?;
+    writeln!(
+        stdout,
+        "\r{}Connected to CAN bus!{}\r",
+        "✓ ".green(),
+        "".clear()
+    )?;
     stdout.flush()?;
     tokio::time::sleep(Duration::from_millis(500)).await;
 
@@ -121,17 +126,23 @@ fn draw_ui(stdout: &mut io::Stdout, config: &EcuConfig) -> io::Result<()> {
     writeln!(
         stdout,
         "\r{}",
-        "═══════════════════════════════════════════════════════════════════════════════".blue().bold()
+        "═══════════════════════════════════════════════════════════════════════════════"
+            .blue()
+            .bold()
     )?;
     writeln!(
         stdout,
         "\r{}",
-        "                          OUTPUT ECU                                          ".blue().bold()
+        "                          OUTPUT ECU                                          "
+            .blue()
+            .bold()
     )?;
     writeln!(
         stdout,
         "\r{}",
-        "═══════════════════════════════════════════════════════════════════════════════".blue().bold()
+        "═══════════════════════════════════════════════════════════════════════════════"
+            .blue()
+            .bold()
     )?;
     writeln!(
         stdout,
@@ -155,7 +166,8 @@ fn draw_ui(stdout: &mut io::Stdout, config: &EcuConfig) -> io::Result<()> {
     writeln!(
         stdout,
         "\r{}",
-        "───────────────────────────────────────────────────────────────────────────────".bright_black()
+        "───────────────────────────────────────────────────────────────────────────────"
+            .bright_black()
     )?;
     writeln!(stdout, "\r{}", "RECEIVED FRAMES:".cyan().bold())?;
     writeln!(
@@ -193,7 +205,11 @@ fn format_received_frame(frame: &CanFrame, count: u64) -> String {
         .collect::<Vec<_>>()
         .join(" ");
 
-    let time_str = frame.timestamp.format("%H:%M:%S%.3f").to_string().bright_black();
+    let time_str = frame
+        .timestamp
+        .format("%H:%M:%S%.3f")
+        .to_string()
+        .bright_black();
 
     format!(
         "[{}] {} │ ID: {} │ DLC: {} │ Data: [{}] │ From: {}",

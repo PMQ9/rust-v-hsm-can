@@ -24,15 +24,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Main launcher mode
-    println!("{}", "═══════════════════════════════════════════════════════════════".cyan().bold());
-    println!("{}", "     Virtual CAN Bus with ARM-based ECU Emulators             ".cyan().bold());
-    println!("{}", "═══════════════════════════════════════════════════════════════".cyan().bold());
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════════════"
+            .cyan()
+            .bold()
+    );
+    println!(
+        "{}",
+        "     Virtual CAN Bus with ARM-based ECU Emulators             "
+            .cyan()
+            .bold()
+    );
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════════════"
+            .cyan()
+            .bold()
+    );
     println!();
     println!("{} Initializing virtual CAN bus...", "→".green());
 
     // Detect available terminal emulator
     let terminal = detect_terminal();
-    println!("{} Detected terminal: {}", "→".green(), terminal.bright_white());
+    println!(
+        "{} Detected terminal: {}",
+        "→".green(),
+        terminal.bright_white()
+    );
 
     println!("{} Launching components...", "→".green());
     println!();

@@ -1,3 +1,5 @@
+use autonomous_vehicle_sim::network::BusClient;
+use autonomous_vehicle_sim::types::{CanFrame, can_ids};
 /// ATTACK SCENARIO: Replay Attack
 ///
 /// This script demonstrates a replay attack where an attacker captures
@@ -7,12 +9,9 @@
 ///
 /// PURPOSE: Educational - demonstrates why timestamps/counters are needed
 /// DEFENSE: HSM with message counters or timestamps can detect replayed frames
-
 use colored::*;
-use std::time::Duration;
 use std::collections::VecDeque;
-use autonomous_vehicle_sim::network::BusClient;
-use autonomous_vehicle_sim::types::{can_ids, CanFrame};
+use std::time::Duration;
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
 const ATTACKER_NAME: &str = "ATTACKER_REPLAY";
@@ -25,7 +24,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("{}", "     ATTACK: Replay Attack             ".red().bold());
     println!("{}", "═══════════════════════════════════════".red().bold());
     println!();
-    println!("{}", "⚠️  WARNING: This is a security research tool".yellow());
+    println!(
+        "{}",
+        "⚠️  WARNING: This is a security research tool".yellow()
+    );
     println!("{}", "⚠️  Only use on authorized test systems".yellow());
     println!();
 
@@ -38,8 +40,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Phase 1: Capture frames
     println!("{}", "Phase 1: Capturing CAN frames".red().bold());
-    println!("{} Monitoring bus for {} seconds...", "→".red(), CAPTURE_DURATION_SEC);
-    println!("{} Capturing BRAKE_COMMAND frames (CAN ID 0x300)", "→".red());
+    println!(
+        "{} Monitoring bus for {} seconds...",
+        "→".red(),
+        CAPTURE_DURATION_SEC
+    );
+    println!(
+        "{} Capturing BRAKE_COMMAND frames (CAN ID 0x300)",
+        "→".red()
+    );
     println!();
 
     let mut captured_frames: VecDeque<CanFrame> = VecDeque::new();
@@ -62,7 +71,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             break; // Captured enough
                         }
                     }
-                } else if let autonomous_vehicle_sim::network::NetMessage::SecuredCanFrame(secured) = msg {
+                } else if let autonomous_vehicle_sim::network::NetMessage::SecuredCanFrame(
+                    secured,
+                ) = msg
+                {
                     // Convert secured frame to regular frame for replay
                     if secured.can_id == can_ids::BRAKE_COMMAND {
                         println!(
@@ -90,7 +102,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     println!();
-    println!("{} Captured {} brake command frames", "✓".red().bold(), captured_frames.len());
+    println!(
+        "{} Captured {} brake command frames",
+        "✓".red().bold(),
+        captured_frames.len()
+    );
 
     if captured_frames.is_empty() {
         println!("{} No brake commands captured. Exiting.", "✗".red());
@@ -100,7 +116,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Phase 2: Wait before replay
     println!();
     println!("{}", "Phase 2: Preparing replay attack".red().bold());
-    println!("{} Waiting {} seconds before replay...", "→".red(), REPLAY_DELAY_SEC);
+    println!(
+        "{} Waiting {} seconds before replay...",
+        "→".red(),
+        REPLAY_DELAY_SEC
+    );
     tokio::time::sleep(Duration::from_secs(REPLAY_DELAY_SEC)).await;
 
     // Phase 3: Replay captured frames
@@ -114,11 +134,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     loop {
         if let Some(frame) = captured_frames.pop_front() {
             // Replay the frame with attacker's identity
-            let replayed_frame = CanFrame::new(
-                frame.id,
-                frame.data.clone(),
-                ATTACKER_NAME.to_string(),
-            );
+            let replayed_frame =
+                CanFrame::new(frame.id, frame.data.clone(), ATTACKER_NAME.to_string());
 
             writer.send_frame(replayed_frame).await?;
 

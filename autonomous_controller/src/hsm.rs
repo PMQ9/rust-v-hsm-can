@@ -1,8 +1,8 @@
 use hmac::{Hmac, Mac};
-use sha2::{Sha256, Digest};
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -152,7 +152,13 @@ impl VirtualHSM {
     }
 
     /// Verify MAC using trusted ECU's key
-    pub fn verify_mac(&self, data: &[u8], mac: &[u8; 32], session_counter: u64, source_ecu: &str) -> Result<(), MacFailureReason> {
+    pub fn verify_mac(
+        &self,
+        data: &[u8],
+        mac: &[u8; 32],
+        session_counter: u64,
+        source_ecu: &str,
+    ) -> Result<(), MacFailureReason> {
         // Get the MAC key for the source ECU
         let key = match self.mac_verification_keys.get(source_ecu) {
             Some(k) => k,
@@ -161,14 +167,15 @@ impl VirtualHSM {
             }
         };
 
-        let mut expected_mac = Hmac::<Sha256>::new_from_slice(key)
-            .expect("HMAC can take key of any size");
+        let mut expected_mac =
+            Hmac::<Sha256>::new_from_slice(key).expect("HMAC can take key of any size");
 
         expected_mac.update(data);
         expected_mac.update(&session_counter.to_le_bytes());
 
         // Constant-time comparison
-        expected_mac.verify_slice(mac)
+        expected_mac
+            .verify_slice(mac)
             .map_err(|_| MacFailureReason::CryptoFailure)
     }
 
@@ -194,11 +201,18 @@ impl VirtualHSM {
     }
 
     /// Verify firmware fingerprint for secure boot
-    pub fn verify_firmware_fingerprint(&self, firmware_data: &[u8], expected_fingerprint: &[u8; 32]) -> bool {
+    pub fn verify_firmware_fingerprint(
+        &self,
+        firmware_data: &[u8],
+        expected_fingerprint: &[u8; 32],
+    ) -> bool {
         let calculated = self.generate_firmware_fingerprint(firmware_data);
 
         // Constant-time comparison
-        calculated.iter().zip(expected_fingerprint.iter()).all(|(a, b)| a == b)
+        calculated
+            .iter()
+            .zip(expected_fingerprint.iter())
+            .all(|(a, b)| a == b)
     }
 
     /// Sign firmware fingerprint with secure boot key (for secure boot)
@@ -215,7 +229,11 @@ impl VirtualHSM {
     }
 
     /// Verify firmware signature (secure boot verification)
-    pub fn verify_firmware_signature(&self, firmware_fingerprint: &[u8; 32], signature: &[u8; 32]) -> bool {
+    pub fn verify_firmware_signature(
+        &self,
+        firmware_fingerprint: &[u8; 32],
+        signature: &[u8; 32],
+    ) -> bool {
         let mut expected_sig = Hmac::<Sha256>::new_from_slice(&self.secure_boot_key)
             .expect("HMAC can take key of any size");
         expected_sig.update(firmware_fingerprint);
@@ -232,7 +250,10 @@ impl VirtualHSM {
         hasher.update(&self.firmware_update_key);
         let expected = hasher.finalize();
 
-        update_token.iter().zip(expected.iter()).all(|(a, b)| a == b)
+        update_token
+            .iter()
+            .zip(expected.iter())
+            .all(|(a, b)| a == b)
     }
 
     /// Generate firmware update authorization token (for testing)
@@ -249,7 +270,10 @@ impl VirtualHSM {
     /// Verify seed/key access authorization
     pub fn verify_seed_access(&self, access_token: &[u8; 32]) -> bool {
         // Constant-time comparison
-        access_token.iter().zip(self.seed_key_access.iter()).all(|(a, b)| a == b)
+        access_token
+            .iter()
+            .zip(self.seed_key_access.iter())
+            .all(|(a, b)| a == b)
     }
 
     /// Generate a random number (for nonces, challenges, etc.)

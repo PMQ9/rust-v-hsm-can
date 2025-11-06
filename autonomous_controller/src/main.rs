@@ -1,18 +1,36 @@
 use colored::*;
-use std::process::{Command, Child, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::Duration;
 
 fn main() {
-    println!("{}", "═══════════════════════════════════════════════════════════════".cyan().bold());
-    println!("{}", "       AUTONOMOUS VEHICLE SIMULATION - LAUNCHER               ".cyan().bold());
-    println!("{}", "═══════════════════════════════════════════════════════════════".cyan().bold());
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════════════"
+            .cyan()
+            .bold()
+    );
+    println!(
+        "{}",
+        "       AUTONOMOUS VEHICLE SIMULATION - LAUNCHER               "
+            .cyan()
+            .bold()
+    );
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════════════"
+            .cyan()
+            .bold()
+    );
     println!();
 
     // Cleanup: Kill any old simulation processes first
     println!("{} Cleaning up old processes...", "→".yellow());
     let cleanup = Command::new("pkill")
-        .args(&["-f", "target/debug/(bus_server|autonomous_controller|wheel|engine|steering|brake|monitor)"])
+        .args(&[
+            "-f",
+            "target/debug/(bus_server|autonomous_controller|wheel|engine|steering|brake|monitor)",
+        ])
         .output();
 
     match cleanup {
@@ -21,7 +39,10 @@ fn main() {
             thread::sleep(Duration::from_millis(500)); // Wait for processes to die
         }
         Err(_) => {
-            println!("{} No old processes found (or pkill unavailable)", "→".bright_black());
+            println!(
+                "{} No old processes found (or pkill unavailable)",
+                "→".bright_black()
+            );
         }
     }
     println!();
@@ -84,7 +105,7 @@ fn main() {
     match Command::new("cargo")
         .args(&["run", "--bin", "autonomous_controller"])
         .stdout(Stdio::null())
-        .stderr(Stdio::inherit())  // Allow stderr to pass through for attack warnings
+        .stderr(Stdio::inherit()) // Allow stderr to pass through for attack warnings
         .spawn()
     {
         Ok(child) => {
@@ -92,17 +113,18 @@ fn main() {
             println!("{} Autonomous controller started", "✓".green().bold());
         }
         Err(e) => {
-            eprintln!("{} Failed to start autonomous controller: {}", "✗".red().bold(), e);
+            eprintln!(
+                "{} Failed to start autonomous controller: {}",
+                "✗".red().bold(),
+                e
+            );
         }
     }
     thread::sleep(Duration::from_millis(500));
 
     // Start actuator ECUs
     println!("\n{} Starting actuator ECUs...", "→".green());
-    let actuators = vec![
-        "brake_controller",
-        "steering_controller",
-    ];
+    let actuators = vec!["brake_controller", "steering_controller"];
 
     for actuator in &actuators {
         match Command::new("cargo")
@@ -123,7 +145,10 @@ fn main() {
     }
 
     // Give ECUs time to connect and start sending data
-    println!("\n{} Waiting for ECUs to connect and start transmitting...", "→".yellow());
+    println!(
+        "\n{} Waiting for ECUs to connect and start transmitting...",
+        "→".yellow()
+    );
     thread::sleep(Duration::from_secs(3));
 
     // Start monitor last (this will display the dashboard)
@@ -134,7 +159,10 @@ fn main() {
         .spawn()
     {
         Ok(child) => {
-            println!("{} Monitor started - displaying dashboard...\n", "✓".green().bold());
+            println!(
+                "{} Monitor started - displaying dashboard...\n",
+                "✓".green().bold()
+            );
             thread::sleep(Duration::from_millis(500));
             child
         }

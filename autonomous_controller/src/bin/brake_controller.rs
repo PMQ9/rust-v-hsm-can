@@ -1,12 +1,12 @@
-use colored::*;
-use std::time::Duration;
-use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
-use autonomous_vehicle_sim::network::{BusClient, NetMessage};
-use autonomous_vehicle_sim::types::{can_ids, encoding};
-use autonomous_vehicle_sim::hsm::{VirtualHSM, SecuredCanFrame, SignedFirmware};
-use autonomous_vehicle_sim::protected_memory::ProtectedMemory;
 use autonomous_vehicle_sim::error_handling::{AttackDetector, ValidationError};
+use autonomous_vehicle_sim::hsm::{SecuredCanFrame, SignedFirmware, VirtualHSM};
+use autonomous_vehicle_sim::network::{BusClient, NetMessage};
+use autonomous_vehicle_sim::protected_memory::ProtectedMemory;
+use autonomous_vehicle_sim::types::{can_ids, encoding};
+use colored::*;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tokio::sync::mpsc;
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
 const ECU_NAME: &str = "BRAKE_CTRL";
@@ -26,7 +26,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Register trusted ECU (autonomous controller)
     println!("{} Registering trusted ECUs...", "→".cyan());
     let autonomous_hsm = VirtualHSM::new("AUTONOMOUS_CTRL".to_string(), 0x2001);
-    hsm.add_trusted_ecu("AUTONOMOUS_CTRL".to_string(), *autonomous_hsm.get_symmetric_key());
+    hsm.add_trusted_ecu(
+        "AUTONOMOUS_CTRL".to_string(),
+        *autonomous_hsm.get_symmetric_key(),
+    );
     println!("  ✓ Registered AUTONOMOUS_CTRL");
 
     // Initialize protected memory
@@ -42,13 +45,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         &hsm,
     );
 
-    protected_mem.provision_firmware(firmware, &hsm)
+    protected_mem
+        .provision_firmware(firmware, &hsm)
         .expect("Failed to provision firmware");
 
     // Perform secure boot
     println!("{} Performing secure boot...", "→".cyan());
-    protected_mem.secure_boot(&hsm)
-        .expect("Secure boot failed");
+    protected_mem.secure_boot(&hsm).expect("Secure boot failed");
 
     println!("{} Connecting to CAN bus at {}...", "→".cyan(), BUS_ADDRESS);
     let client = BusClient::connect(BUS_ADDRESS, ECU_NAME.to_string()).await?;
@@ -59,8 +62,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Initialize attack detector
     let attack_detector = Arc::new(Mutex::new(AttackDetector::new(ECU_NAME.to_string())));
     println!("{} Attack detection initialized", "✓".green().bold());
-    println!("   • CRC error threshold: {} consecutive errors", autonomous_vehicle_sim::error_handling::CRC_ERROR_THRESHOLD);
-    println!("   • MAC error threshold: {} consecutive errors", autonomous_vehicle_sim::error_handling::MAC_ERROR_THRESHOLD);
+    println!(
+        "   • CRC error threshold: {} consecutive errors",
+        autonomous_vehicle_sim::error_handling::CRC_ERROR_THRESHOLD
+    );
+    println!(
+        "   • MAC error threshold: {} consecutive errors",
+        autonomous_vehicle_sim::error_handling::MAC_ERROR_THRESHOLD
+    );
     println!();
 
     // Split client into reader and writer
@@ -113,7 +122,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 }; // Lock is dropped here
 
                                 if !should_continue {
-                                    println!("{} Frame rejected - security threshold exceeded", "✗".red());
+                                    println!(
+                                        "{} Frame rejected - security threshold exceeded",
+                                        "✗".red()
+                                    );
                                 }
                             }
                         }
@@ -124,11 +136,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     // Unsecured frame detected - record as attack
                     let should_continue = {
                         let mut detector = detector_clone.lock().unwrap();
-                        detector.record_error(ValidationError::UnsecuredFrame, &unsecured_frame.source)
+                        detector
+                            .record_error(ValidationError::UnsecuredFrame, &unsecured_frame.source)
                     };
 
                     if !should_continue {
-                        eprintln!("{} Unsecured frame rejected - attack threshold exceeded", "✗".red());
+                        eprintln!(
+                            "{} Unsecured frame rejected - attack threshold exceeded",
+                            "✗".red()
+                        );
                     }
                 }
                 Err(_) => break,
@@ -143,7 +159,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Process brake commands (secured)
         match tokio::time::timeout(Duration::from_millis(100), frame_rx.recv()).await {
             Ok(Some(secured_frame)) => {
-                if secured_frame.can_id == can_ids::BRAKE_COMMAND && !secured_frame.data.is_empty() {
+                if secured_frame.can_id == can_ids::BRAKE_COMMAND && !secured_frame.data.is_empty()
+                {
                     let commanded_pressure = encoding::decode_brake_pressure(secured_frame.data[0]);
 
                     // Simulate actuator response (smooth transition)
@@ -155,7 +172,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     println!(
                         "{} {} Brake pressure: {:.0}% (commanded: {:.0}%)",
                         "→".red(),
-                        if current_brake_pressure > 50.0 { "🔴" } else if current_brake_pressure > 20.0 { "🟡" } else { "🟢" },
+                        if current_brake_pressure > 50.0 {
+                            "🔴"
+                        } else if current_brake_pressure > 20.0 {
+                            "🟡"
+                        } else {
+                            "🟢"
+                        },
                         current_brake_pressure,
                         commanded_pressure
                     );

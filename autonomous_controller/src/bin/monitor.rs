@@ -1,3 +1,6 @@
+use autonomous_vehicle_sim::hsm::SecuredCanFrame;
+use autonomous_vehicle_sim::network::{BusClient, NetMessage};
+use autonomous_vehicle_sim::types::{CanId, can_ids, encoding};
 use colored::*;
 use crossterm::{
     cursor,
@@ -9,9 +12,6 @@ use std::collections::HashMap;
 use std::io::{self, Write};
 use std::time::Duration;
 use tokio::sync::mpsc;
-use autonomous_vehicle_sim::network::{BusClient, NetMessage};
-use autonomous_vehicle_sim::types::{CanId, can_ids, encoding};
-use autonomous_vehicle_sim::hsm::SecuredCanFrame;
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
 
@@ -51,8 +51,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     for attempt in 1..=10 {
         match tokio::time::timeout(
             Duration::from_millis(500),
-            BusClient::connect(BUS_ADDRESS, "MONITOR".to_string())
-        ).await {
+            BusClient::connect(BUS_ADDRESS, "MONITOR".to_string()),
+        )
+        .await
+        {
             Ok(Ok(_client)) => {
                 connected = true;
                 break;
@@ -69,14 +71,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     if !connected {
         terminal::disable_raw_mode()?;
-        eprintln!("\r\n{}Failed to connect to bus server. Is it running?{}", "✗ ".red(), "".clear());
+        eprintln!(
+            "\r\n{}Failed to connect to bus server. Is it running?{}",
+            "✗ ".red(),
+            "".clear()
+        );
         eprintln!("\r\nStart the bus server with: cargo run --bin bus_server");
         return Ok(());
     }
 
     // Reconnect to get the client
     let client = BusClient::connect(BUS_ADDRESS, "MONITOR".to_string()).await?;
-    writeln!(stdout, "\r\n{}Connected to CAN bus!{}", "✓ ".green(), "".clear())?;
+    writeln!(
+        stdout,
+        "\r\n{}Connected to CAN bus!{}",
+        "✓ ".green(),
+        "".clear()
+    )?;
     stdout.flush()?;
     tokio::time::sleep(Duration::from_millis(500)).await;
 
@@ -200,26 +211,29 @@ impl Dashboard {
         // Categorize frame based on CAN ID and source
         match secured_frame.can_id {
             // Sensor messages (TX only)
-            id if id == can_ids::WHEEL_SPEED_FL ||
-                  id == can_ids::WHEEL_SPEED_FR ||
-                  id == can_ids::WHEEL_SPEED_RL ||
-                  id == can_ids::WHEEL_SPEED_RR ||
-                  id == can_ids::ENGINE_RPM ||
-                  id == can_ids::ENGINE_THROTTLE ||
-                  id == can_ids::STEERING_ANGLE ||
-                  id == can_ids::STEERING_TORQUE => {
+            id if id == can_ids::WHEEL_SPEED_FL
+                || id == can_ids::WHEEL_SPEED_FR
+                || id == can_ids::WHEEL_SPEED_RL
+                || id == can_ids::WHEEL_SPEED_RR
+                || id == can_ids::ENGINE_RPM
+                || id == can_ids::ENGINE_THROTTLE
+                || id == can_ids::STEERING_ANGLE
+                || id == can_ids::STEERING_TORQUE =>
+            {
                 self.sensors.insert(secured_frame.can_id, latest.clone());
-            },
+            }
             // Controller commands (TX from controller)
-            id if id == can_ids::BRAKE_COMMAND ||
-                  id == can_ids::THROTTLE_COMMAND ||
-                  id == can_ids::STEERING_COMMAND => {
+            id if id == can_ids::BRAKE_COMMAND
+                || id == can_ids::THROTTLE_COMMAND
+                || id == can_ids::STEERING_COMMAND =>
+            {
                 if secured_frame.source == "AUTONOMOUS_CTRL" {
-                    self.controller_tx.insert(secured_frame.can_id, latest.clone());
+                    self.controller_tx
+                        .insert(secured_frame.can_id, latest.clone());
                 }
                 // Also track in actuators (RX for actuators)
                 self.actuators.insert(secured_frame.can_id, latest.clone());
-            },
+            }
             _ => {}
         }
 
@@ -236,7 +250,8 @@ impl Dashboard {
                 can_ids::STEERING_TORQUE,
             ];
             if sensor_ids.contains(&secured_frame.can_id) {
-                self.controller_rx.insert(secured_frame.can_id, latest.clone());
+                self.controller_rx
+                    .insert(secured_frame.can_id, latest.clone());
             }
         }
     }
@@ -251,26 +266,55 @@ impl Dashboard {
         );
 
         // Header
-        writeln!(stdout, "\r{}", "═══════════════════════════════════════════════════════════════════════════════".cyan().bold())?;
-        writeln!(stdout, "\r{}", "          AUTONOMOUS VEHICLE CAN BUS MONITOR                   ".cyan().bold())?;
-        writeln!(stdout, "\r{}", "═══════════════════════════════════════════════════════════════════════════════".cyan().bold())?;
+        writeln!(
+            stdout,
+            "\r{}",
+            "═══════════════════════════════════════════════════════════════════════════════"
+                .cyan()
+                .bold()
+        )?;
+        writeln!(
+            stdout,
+            "\r{}",
+            "          AUTONOMOUS VEHICLE CAN BUS MONITOR                   "
+                .cyan()
+                .bold()
+        )?;
+        writeln!(
+            stdout,
+            "\r{}",
+            "═══════════════════════════════════════════════════════════════════════════════"
+                .cyan()
+                .bold()
+        )?;
         writeln!(stdout, "\r")?;
         // Display security status with attack warnings
         if self.unsecured_frame_count > 0 {
-            writeln!(stdout, "\r{} Total frames: {} | {} {} | Press 'q' to quit\r",
+            writeln!(
+                stdout,
+                "\r{} Total frames: {} | {} {} | Press 'q' to quit\r",
                 "ℹ".blue(),
                 self.frame_count,
                 "⚠".red().bold(),
-                format!("ATTACK DETECTED: {} unsecured frames", self.unsecured_frame_count).red().bold()
+                format!(
+                    "ATTACK DETECTED: {} unsecured frames",
+                    self.unsecured_frame_count
+                )
+                .red()
+                .bold()
             )?;
             if !self.recent_attackers.is_empty() {
-                writeln!(stdout, "\r{} {}\r",
+                writeln!(
+                    stdout,
+                    "\r{} {}\r",
                     " Attack Source:".red().bold(),
                     self.recent_attackers.join(", ").red()
                 )?;
             }
         } else {
-            writeln!(stdout, "\r{} Total frames: {} | {} Security: ENABLED | Press 'q' to quit\r",
+            writeln!(
+                stdout,
+                "\r{} Total frames: {} | {} Security: ENABLED | Press 'q' to quit\r",
                 "ℹ".blue(),
                 self.frame_count,
                 "✓".green().bold()
@@ -280,17 +324,39 @@ impl Dashboard {
         // Display emergency shutdown warning if controller is stopped
         if self.controller_emergency_shutdown {
             writeln!(stdout, "\r")?;
-            writeln!(stdout, "\r{}", "═══════════════════════════════════════════════════════════════════════════════".red().bold())?;
-            writeln!(stdout, "\r{}  {}\r",
+            writeln!(
+                stdout,
+                "\r{}",
+                "═══════════════════════════════════════════════════════════════════════════════"
+                    .red()
+                    .bold()
+            )?;
+            writeln!(
+                stdout,
+                "\r{}  {}\r",
                 " ".repeat(15),
                 "⚠ AUTONOMOUS CONTROLLER DEACTIVATED ⚠".red().bold()
             )?;
-            writeln!(stdout, "\r{}", "═══════════════════════════════════════════════════════════════════════════════".red().bold())?;
-            writeln!(stdout, "\r{} Attack detected - Controller STOPPED for safety | {} to resume\r",
+            writeln!(
+                stdout,
+                "\r{}",
+                "═══════════════════════════════════════════════════════════════════════════════"
+                    .red()
+                    .bold()
+            )?;
+            writeln!(
+                stdout,
+                "\r{} Attack detected - Controller STOPPED for safety | {} to resume\r",
                 " ".repeat(10),
                 "RESTART REQUIRED".yellow().bold()
             )?;
-            writeln!(stdout, "\r{}", "═══════════════════════════════════════════════════════════════════════════════".red().bold())?;
+            writeln!(
+                stdout,
+                "\r{}",
+                "═══════════════════════════════════════════════════════════════════════════════"
+                    .red()
+                    .bold()
+            )?;
         }
         // writeln!(stdout, "\r{} All frames include MAC (HMAC-SHA256) and CRC32 verification\r", "⚡".yellow())?;
         writeln!(stdout, "\r")?;
@@ -306,12 +372,20 @@ impl Dashboard {
         writeln!(stdout, "\r")?;
 
         // CONTROLLER Section
-        writeln!(stdout, "\r{}", "CONTROLLER (Autonomous):".bright_blue().bold())?;
+        writeln!(
+            stdout,
+            "\r{}",
+            "CONTROLLER (Autonomous):".bright_blue().bold()
+        )?;
         writeln!(stdout, "\r{}", "  → Commands Sent:".bright_blue())?;
         self.draw_controller_tx_line(stdout, can_ids::BRAKE_COMMAND, "Brake Cmd")?;
         self.draw_controller_tx_line(stdout, can_ids::THROTTLE_COMMAND, "Throttle Cmd")?;
         self.draw_controller_tx_line(stdout, can_ids::STEERING_COMMAND, "Steering Cmd")?;
-        writeln!(stdout, "\r{}", "  ← Sensor Data Received (sample):".bright_blue())?;
+        writeln!(
+            stdout,
+            "\r{}",
+            "  ← Sensor Data Received (sample):".bright_blue()
+        )?;
         self.draw_controller_rx_line(stdout, can_ids::WHEEL_SPEED_FL, "Wheel FL")?;
         self.draw_controller_rx_line(stdout, can_ids::ENGINE_RPM, "Engine RPM")?;
         writeln!(stdout, "\r")?;
@@ -359,7 +433,12 @@ impl Dashboard {
         Ok(())
     }
 
-    fn draw_controller_tx_line(&self, stdout: &mut io::Stdout, id: CanId, name: &str) -> io::Result<()> {
+    fn draw_controller_tx_line(
+        &self,
+        stdout: &mut io::Stdout,
+        id: CanId,
+        name: &str,
+    ) -> io::Result<()> {
         if let Some(latest) = self.controller_tx.get(&id) {
             let time_str = latest.secured_frame.timestamp.format("%H:%M:%S%.3f");
             let id_str = format_can_id(latest.secured_frame.can_id);
@@ -392,7 +471,12 @@ impl Dashboard {
         Ok(())
     }
 
-    fn draw_controller_rx_line(&self, stdout: &mut io::Stdout, id: CanId, name: &str) -> io::Result<()> {
+    fn draw_controller_rx_line(
+        &self,
+        stdout: &mut io::Stdout,
+        id: CanId,
+        name: &str,
+    ) -> io::Result<()> {
         if let Some(latest) = self.controller_rx.get(&id) {
             let time_str = latest.secured_frame.timestamp.format("%H:%M:%S%.3f");
             let id_str = format_can_id(latest.secured_frame.can_id);
@@ -469,19 +553,19 @@ fn decode_secured_message(secured_frame: &SecuredCanFrame) -> String {
         id if id == can_ids::WHEEL_SPEED_FL => {
             let speed = encoding::decode_wheel_speed(&secured_frame.data);
             format!("Speed: {:.2} rad/s", speed)
-        },
+        }
         id if id == can_ids::WHEEL_SPEED_FR => {
             let speed = encoding::decode_wheel_speed(&secured_frame.data);
             format!("Speed: {:.2} rad/s", speed)
-        },
+        }
         id if id == can_ids::WHEEL_SPEED_RL => {
             let speed = encoding::decode_wheel_speed(&secured_frame.data);
             format!("Speed: {:.2} rad/s", speed)
-        },
+        }
         id if id == can_ids::WHEEL_SPEED_RR => {
             let speed = encoding::decode_wheel_speed(&secured_frame.data);
             format!("Speed: {:.2} rad/s", speed)
-        },
+        }
         id if id == can_ids::ENGINE_RPM => {
             if secured_frame.data.len() >= 2 {
                 let rpm = encoding::decode_rpm(&secured_frame.data);
@@ -494,7 +578,7 @@ fn decode_secured_message(secured_frame: &SecuredCanFrame) -> String {
             } else {
                 "Invalid data".to_string()
             }
-        },
+        }
         id if id == can_ids::ENGINE_THROTTLE => {
             if !secured_frame.data.is_empty() {
                 let throttle = encoding::decode_throttle(secured_frame.data[0]);
@@ -502,15 +586,15 @@ fn decode_secured_message(secured_frame: &SecuredCanFrame) -> String {
             } else {
                 "Invalid data".to_string()
             }
-        },
+        }
         id if id == can_ids::STEERING_ANGLE => {
             let angle = encoding::decode_steering_angle(&secured_frame.data);
             format!("Angle: {:.1}°", angle)
-        },
+        }
         id if id == can_ids::STEERING_TORQUE => {
             let torque = encoding::decode_steering_torque(&secured_frame.data);
             format!("Torque: {:.2} Nm", torque)
-        },
+        }
         id if id == can_ids::BRAKE_COMMAND => {
             if !secured_frame.data.is_empty() {
                 let pressure = encoding::decode_brake_pressure(secured_frame.data[0]);
@@ -518,7 +602,7 @@ fn decode_secured_message(secured_frame: &SecuredCanFrame) -> String {
             } else {
                 "Invalid data".to_string()
             }
-        },
+        }
         id if id == can_ids::THROTTLE_COMMAND => {
             if !secured_frame.data.is_empty() {
                 let throttle = encoding::decode_throttle(secured_frame.data[0]);
@@ -526,12 +610,12 @@ fn decode_secured_message(secured_frame: &SecuredCanFrame) -> String {
             } else {
                 "Invalid data".to_string()
             }
-        },
+        }
         id if id == can_ids::STEERING_COMMAND => {
             let angle = encoding::decode_steering_angle(&secured_frame.data);
             format!("Angle: {:.1}°", angle)
-        },
-        _ => "Unknown".to_string()
+        }
+        _ => "Unknown".to_string(),
     }
 }
 
@@ -547,9 +631,14 @@ fn format_raw_data(data: &[u8]) -> String {
     let blocks: Vec<String> = (0..4)
         .map(|i| {
             if i * 2 < data.len() {
-                format!("{:02X} {:02X}",
+                format!(
+                    "{:02X} {:02X}",
                     bytes[i * 2],
-                    if i * 2 + 1 < data.len() { bytes[i * 2 + 1] } else { 0 }
+                    if i * 2 + 1 < data.len() {
+                        bytes[i * 2 + 1]
+                    } else {
+                        0
+                    }
                 )
             } else {
                 "-- --".to_string()

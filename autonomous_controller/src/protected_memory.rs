@@ -1,4 +1,4 @@
-use crate::hsm::{VirtualHSM, SignedFirmware};
+use crate::hsm::{SignedFirmware, VirtualHSM};
 use std::sync::{Arc, RwLock};
 
 /// Simulated memory address range for firmware
@@ -112,7 +112,11 @@ impl ProtectedMemory {
 
     /// Authorize firmware update (requires HSM authorization token)
     /// This unlocks the protected memory for writing
-    pub fn authorize_update(&self, update_token: &[u8; 32], hsm: &VirtualHSM) -> Result<(), String> {
+    pub fn authorize_update(
+        &self,
+        update_token: &[u8; 32],
+        hsm: &VirtualHSM,
+    ) -> Result<(), String> {
         if !hsm.authorize_firmware_update(update_token) {
             return Err("Firmware update authorization failed - invalid token".to_string());
         }
@@ -191,7 +195,10 @@ impl ProtectedMemory {
     /// In real hardware, this would be a memory-mapped read
     pub fn read_byte(&self, offset: usize) -> Result<u8, String> {
         if offset >= self.max_size {
-            return Err(format!("Address out of bounds: 0x{:08X}", self.base_address + offset));
+            return Err(format!(
+                "Address out of bounds: 0x{:08X}",
+                self.base_address + offset
+            ));
         }
 
         let firmware = self.firmware.read().unwrap();
@@ -218,7 +225,10 @@ impl ProtectedMemory {
         }
 
         if offset >= self.max_size {
-            return Err(format!("Address out of bounds: 0x{:08X}", self.base_address + offset));
+            return Err(format!(
+                "Address out of bounds: 0x{:08X}",
+                self.base_address + offset
+            ));
         }
 
         // In real implementation, this would write to flash

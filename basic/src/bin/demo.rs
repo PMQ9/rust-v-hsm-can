@@ -7,9 +7,24 @@ use vhsm_can::types::{ArmVariant, CanId, EcuConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("{}", "═══════════════════════════════════════════════════════════════".cyan().bold());
-    println!("{}", "     Virtual CAN Bus Demo - Single Process                    ".cyan().bold());
-    println!("{}", "═══════════════════════════════════════════════════════════════".cyan().bold());
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════════════"
+            .cyan()
+            .bold()
+    );
+    println!(
+        "{}",
+        "     Virtual CAN Bus Demo - Single Process                    "
+            .cyan()
+            .bold()
+    );
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════════════"
+            .cyan()
+            .bold()
+    );
     println!();
 
     // Create the virtual CAN bus
@@ -27,7 +42,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let input_ecu = Ecu::new(input_config.clone(), bus.clone());
     println!("  - Name: {}", input_config.name.bright_cyan());
-    println!("  - Processor: {}", input_config.arm_variant.as_str().bright_cyan());
+    println!(
+        "  - Processor: {}",
+        input_config.arm_variant.as_str().bright_cyan()
+    );
     println!("{} Input ECU ready", "✓".green());
     println!();
 
@@ -40,7 +58,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let mut output_ecu = Ecu::new(output_config.clone(), bus.clone());
     println!("  - Name: {}", output_config.name.bright_cyan());
-    println!("  - Processor: {}", output_config.arm_variant.as_str().bright_cyan());
+    println!(
+        "  - Processor: {}",
+        output_config.arm_variant.as_str().bright_cyan()
+    );
     println!("{} Output ECU ready", "✓".green());
     println!();
 
@@ -50,9 +71,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{} Monitor ready", "✓".green());
     println!();
 
-    println!("{}", "═══════════════════════════════════════════════════════════════".yellow().bold());
-    println!("{}", "                  Starting Simulation                          ".yellow().bold());
-    println!("{}", "═══════════════════════════════════════════════════════════════".yellow().bold());
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════════════"
+            .yellow()
+            .bold()
+    );
+    println!(
+        "{}",
+        "                  Starting Simulation                          "
+            .yellow()
+            .bold()
+    );
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════════════"
+            .yellow()
+            .bold()
+    );
     println!();
 
     // Spawn monitor task
@@ -138,8 +174,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         (CanId::Standard(0x100), vec![0x01, 0x02, 0x03, 0x04]),
         (CanId::Standard(0x200), vec![0xAA, 0xBB, 0xCC]),
         (CanId::Standard(0x123), vec![0x11, 0x22, 0x33, 0x44, 0x55]),
-        (CanId::Extended(0x12345678), vec![0xFF, 0xEE, 0xDD, 0xCC, 0xBB, 0xAA]),
-        (CanId::Standard(0x7FF), vec![0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]),
+        (
+            CanId::Extended(0x12345678),
+            vec![0xFF, 0xEE, 0xDD, 0xCC, 0xBB, 0xAA],
+        ),
+        (
+            CanId::Standard(0x7FF),
+            vec![0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07],
+        ),
     ];
 
     for (i, (id, data)) in test_frames.iter().enumerate() {
@@ -149,9 +191,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!();
-    println!("{}", "═══════════════════════════════════════════════════════════════".cyan().bold());
-    println!("{} Test completed! Sent {} frames", "✓".green().bold(), test_frames.len());
-    println!("{}", "═══════════════════════════════════════════════════════════════".cyan().bold());
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════════════"
+            .cyan()
+            .bold()
+    );
+    println!(
+        "{} Test completed! Sent {} frames",
+        "✓".green().bold(),
+        test_frames.len()
+    );
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════════════"
+            .cyan()
+            .bold()
+    );
 
     // Give tasks time to finish processing
     sleep(Duration::from_millis(500)).await;

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{Mutex, broadcast};
 use vhsm_can::network::NetMessage;
 use vhsm_can::types::CanFrame;
 
@@ -14,11 +14,30 @@ type ClientMap = Arc<Mutex<HashMap<String, tokio::net::tcp::OwnedWriteHalf>>>;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("{}", "═══════════════════════════════════════════════════════════════".magenta().bold());
-    println!("{}", "                    CAN BUS SERVER                             ".magenta().bold());
-    println!("{}", "═══════════════════════════════════════════════════════════════".magenta().bold());
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════════════"
+            .magenta()
+            .bold()
+    );
+    println!(
+        "{}",
+        "                    CAN BUS SERVER                             "
+            .magenta()
+            .bold()
+    );
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════════════"
+            .magenta()
+            .bold()
+    );
     println!();
-    println!("{} Starting bus server on {}...", "→".green(), BUS_ADDRESS.bright_white());
+    println!(
+        "{} Starting bus server on {}...",
+        "→".green(),
+        BUS_ADDRESS.bright_white()
+    );
 
     // Create broadcast channel for CAN frames
     let (tx, _rx) = broadcast::channel::<CanFrame>(BUFFER_SIZE);
@@ -28,7 +47,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let clients: ClientMap = Arc::new(Mutex::new(HashMap::new()));
 
     let listener = TcpListener::bind(BUS_ADDRESS).await?;
-    println!("{} Bus server ready! Waiting for connections...", "✓".green().bold());
+    println!(
+        "{} Bus server ready! Waiting for connections...",
+        "✓".green().bold()
+    );
     println!();
 
     let mut client_count = 0u32;

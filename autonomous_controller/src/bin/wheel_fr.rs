@@ -1,9 +1,9 @@
+use autonomous_vehicle_sim::hsm::{SecuredCanFrame, SignedFirmware, VirtualHSM};
+use autonomous_vehicle_sim::network::BusClient;
+use autonomous_vehicle_sim::protected_memory::ProtectedMemory;
+use autonomous_vehicle_sim::types::{can_ids, encoding};
 use colored::*;
 use std::time::Duration;
-use autonomous_vehicle_sim::network::BusClient;
-use autonomous_vehicle_sim::types::{can_ids, encoding};
-use autonomous_vehicle_sim::hsm::{VirtualHSM, SecuredCanFrame, SignedFirmware};
-use autonomous_vehicle_sim::protected_memory::ProtectedMemory;
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
 const ECU_NAME: &str = "WHEEL_FR";
@@ -12,9 +12,18 @@ const HSM_SEED: u64 = 0x1002; // Unique seed for this ECU
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    println!("{}", "═══════════════════════════════════════".green().bold());
-    println!("{}", "  Front Right Wheel Speed Sensor      ".green().bold());
-    println!("{}", "═══════════════════════════════════════".green().bold());
+    println!(
+        "{}",
+        "═══════════════════════════════════════".green().bold()
+    );
+    println!(
+        "{}",
+        "  Front Right Wheel Speed Sensor      ".green().bold()
+    );
+    println!(
+        "{}",
+        "═══════════════════════════════════════".green().bold()
+    );
     println!();
 
     // Initialize HSM
@@ -34,18 +43,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         &hsm,
     );
 
-    protected_mem.provision_firmware(firmware, &hsm)
+    protected_mem
+        .provision_firmware(firmware, &hsm)
         .expect("Failed to provision firmware");
 
     // Perform secure boot
     println!("{} Performing secure boot...", "→".cyan());
-    protected_mem.secure_boot(&hsm)
-        .expect("Secure boot failed");
+    protected_mem.secure_boot(&hsm).expect("Secure boot failed");
 
     println!("{} Connecting to CAN bus at {}...", "→".cyan(), BUS_ADDRESS);
     let client = BusClient::connect(BUS_ADDRESS, ECU_NAME.to_string()).await?;
     println!("{} Connected to CAN bus!", "✓".green().bold());
-    println!("{} Sending secured wheel speed data every {}ms", "→".cyan(), UPDATE_INTERVAL_MS);
+    println!(
+        "{} Sending secured wheel speed data every {}ms",
+        "→".cyan(),
+        UPDATE_INTERVAL_MS
+    );
     println!();
 
     // Split client for concurrent reading/writing

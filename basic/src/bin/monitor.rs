@@ -35,8 +35,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     for attempt in 1..=10 {
         match tokio::time::timeout(
             Duration::from_millis(500),
-            BusClient::connect(BUS_ADDRESS, "MONITOR".to_string())
-        ).await {
+            BusClient::connect(BUS_ADDRESS, "MONITOR".to_string()),
+        )
+        .await
+        {
             Ok(Ok(_client)) => {
                 connected = true;
                 break;
@@ -53,14 +55,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     if !connected {
         terminal::disable_raw_mode()?;
-        eprintln!("\r\n{}Failed to connect to bus server. Is it running?{}", "✗ ".red(), "".clear());
+        eprintln!(
+            "\r\n{}Failed to connect to bus server. Is it running?{}",
+            "✗ ".red(),
+            "".clear()
+        );
         eprintln!("\r\nStart the bus server with: cargo run --bin bus_server");
         return Ok(());
     }
 
     // Reconnect to get the client
     let client = BusClient::connect(BUS_ADDRESS, "MONITOR".to_string()).await?;
-    writeln!(stdout, "\r\n{}Connected to CAN bus!{}", "✓ ".green(), "".clear())?;
+    writeln!(
+        stdout,
+        "\r\n{}Connected to CAN bus!{}",
+        "✓ ".green(),
+        "".clear()
+    )?;
     stdout.flush()?;
     tokio::time::sleep(Duration::from_millis(500)).await;
 
@@ -144,17 +155,23 @@ fn draw_header(stdout: &mut io::Stdout) -> io::Result<()> {
     writeln!(
         stdout,
         "\r{}",
-        "═══════════════════════════════════════════════════════════════════════════════".cyan().bold()
+        "═══════════════════════════════════════════════════════════════════════════════"
+            .cyan()
+            .bold()
     )?;
     writeln!(
         stdout,
         "\r{}",
-        "                         CAN BUS MONITOR                                      ".cyan().bold()
+        "                         CAN BUS MONITOR                                      "
+            .cyan()
+            .bold()
     )?;
     writeln!(
         stdout,
         "\r{}",
-        "═══════════════════════════════════════════════════════════════════════════════".cyan().bold()
+        "═══════════════════════════════════════════════════════════════════════════════"
+            .cyan()
+            .bold()
     )?;
     writeln!(stdout, "\r")?;
     stdout.flush()?;
@@ -174,7 +191,11 @@ fn format_frame(frame: &CanFrame, count: u64) -> String {
         .collect::<Vec<_>>()
         .join(" ");
 
-    let time_str = frame.timestamp.format("%H:%M:%S%.3f").to_string().bright_black();
+    let time_str = frame
+        .timestamp
+        .format("%H:%M:%S%.3f")
+        .to_string()
+        .bright_black();
 
     format!(
         "[{}] {} │ ID: {} │ DLC: {} │ Data: [{}] │ Src: {}",

@@ -1,3 +1,5 @@
+use autonomous_vehicle_sim::network::BusClient;
+use autonomous_vehicle_sim::types::{CanFrame, can_ids, encoding};
 /// ATTACK SCENARIO: ECU Spoofing
 ///
 /// This script demonstrates an ECU spoofing attack where an attacker
@@ -7,11 +9,8 @@
 ///
 /// PURPOSE: Educational - demonstrates why sender authentication is critical
 /// DEFENSE: HSM with per-ECU keys can verify sender identity
-
 use colored::*;
 use std::time::Duration;
-use autonomous_vehicle_sim::network::BusClient;
-use autonomous_vehicle_sim::types::{can_ids, encoding, CanFrame};
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
 const ATTACKER_NAME: &str = "ATTACKER_SPOOF";
@@ -23,7 +22,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("{}", "   ATTACK: ECU Spoofing                ".red().bold());
     println!("{}", "═══════════════════════════════════════".red().bold());
     println!();
-    println!("{}", "⚠️  WARNING: This is a security research tool".yellow());
+    println!(
+        "{}",
+        "⚠️  WARNING: This is a security research tool".yellow()
+    );
     println!("{}", "⚠️  Only use on authorized test systems".yellow());
     println!();
 
@@ -37,7 +39,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("{}", "Starting ECU spoofing attack:".red().bold());
     println!("{} Impersonating: {}", "→".red(), SPOOFED_ECU.yellow());
     println!("{} Sending malicious brake commands", "→".red());
-    println!("{} Commands will appear to come from legitimate ECU", "→".red());
+    println!(
+        "{} Commands will appear to come from legitimate ECU",
+        "→".red()
+    );
     println!();
 
     let mut counter = 0u32;
@@ -56,11 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
             1 => {
                 // Phase 2: Rapid pulsing (could damage ABS)
-                if counter % 4 < 2 {
-                    80.0
-                } else {
-                    0.0
-                }
+                if counter % 4 < 2 { 80.0 } else { 0.0 }
             }
             2 => {
                 // Phase 3: Gradual but unwanted braking

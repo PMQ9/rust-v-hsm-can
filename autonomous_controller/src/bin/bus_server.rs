@@ -1,24 +1,43 @@
+use autonomous_vehicle_sim::hsm::SecuredCanFrame;
+use autonomous_vehicle_sim::network::NetMessage;
 use colored::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, Mutex};
-use autonomous_vehicle_sim::network::NetMessage;
-use autonomous_vehicle_sim::hsm::SecuredCanFrame;
+use tokio::sync::{Mutex, broadcast};
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
-const BUFFER_SIZE: usize = 10000;  // Increased for 9 ECUs @ 10Hz (~100 fps) = ~100 seconds of buffering
+const BUFFER_SIZE: usize = 10000; // Increased for 9 ECUs @ 10Hz (~100 fps) = ~100 seconds of buffering
 
 type ClientMap = Arc<Mutex<HashMap<String, tokio::net::tcp::OwnedWriteHalf>>>;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("{}", "═══════════════════════════════════════════════════════════════".magenta().bold());
-    println!("{}", "         AUTONOMOUS VEHICLE CAN BUS SERVER                    ".magenta().bold());
-    println!("{}", "═══════════════════════════════════════════════════════════════".magenta().bold());
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════════════"
+            .magenta()
+            .bold()
+    );
+    println!(
+        "{}",
+        "         AUTONOMOUS VEHICLE CAN BUS SERVER                    "
+            .magenta()
+            .bold()
+    );
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════════════"
+            .magenta()
+            .bold()
+    );
     println!();
-    println!("{} Starting bus server on {}...", "→".green(), BUS_ADDRESS.bright_white());
+    println!(
+        "{} Starting bus server on {}...",
+        "→".green(),
+        BUS_ADDRESS.bright_white()
+    );
 
     // Create broadcast channel for secured CAN frames
     let (tx, _rx) = broadcast::channel::<SecuredCanFrame>(BUFFER_SIZE);
@@ -28,7 +47,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let clients: ClientMap = Arc::new(Mutex::new(HashMap::new()));
 
     let listener = TcpListener::bind(BUS_ADDRESS).await?;
-    println!("{} Bus server ready! Waiting for ECU connections...", "✓".green().bold());
+    println!(
+        "{} Bus server ready! Waiting for ECU connections...",
+        "✓".green().bold()
+    );
     println!();
 
     let mut client_count = 0u32;
@@ -190,8 +212,8 @@ async fn handle_client(
                     data: frame.data,
                     source: frame.source,
                     timestamp: frame.timestamp,
-                    mac: [0u8; 32],  // No MAC for legacy frames
-                    crc: 0,          // No CRC for legacy frames
+                    mac: [0u8; 32], // No MAC for legacy frames
+                    crc: 0,         // No CRC for legacy frames
                     session_counter: 0,
                 };
 

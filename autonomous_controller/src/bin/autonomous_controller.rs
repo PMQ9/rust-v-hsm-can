@@ -1,12 +1,12 @@
-use colored::*;
-use std::time::Duration;
-use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
-use autonomous_vehicle_sim::network::{BusClient, NetMessage};
-use autonomous_vehicle_sim::types::{can_ids, encoding, VehicleState};
-use autonomous_vehicle_sim::hsm::{VirtualHSM, SecuredCanFrame, SignedFirmware};
-use autonomous_vehicle_sim::protected_memory::ProtectedMemory;
 use autonomous_vehicle_sim::error_handling::{AttackDetector, ValidationError};
+use autonomous_vehicle_sim::hsm::{SecuredCanFrame, SignedFirmware, VirtualHSM};
+use autonomous_vehicle_sim::network::{BusClient, NetMessage};
+use autonomous_vehicle_sim::protected_memory::ProtectedMemory;
+use autonomous_vehicle_sim::types::{VehicleState, can_ids, encoding};
+use colored::*;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tokio::sync::mpsc;
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
 const ECU_NAME: &str = "AUTONOMOUS_CTRL";
@@ -14,7 +14,7 @@ const CONTROL_INTERVAL_MS: u64 = 100; // 10 Hz control loop
 const HSM_SEED: u64 = 0x2001; // Unique seed for autonomous controller
 
 // HSM seeds for all ECUs (in production, these would be securely stored)
-const ECU_SEEDS: &[(& str, u64)] = &[
+const ECU_SEEDS: &[(&str, u64)] = &[
     ("WHEEL_FL", 0x1001),
     ("WHEEL_FR", 0x1002),
     ("WHEEL_RL", 0x1003),
@@ -25,9 +25,24 @@ const ECU_SEEDS: &[(& str, u64)] = &[
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    println!("{}", "═══════════════════════════════════════════════════════".bright_blue().bold());
-    println!("{}", "         AUTONOMOUS VEHICLE CONTROLLER                 ".bright_blue().bold());
-    println!("{}", "═══════════════════════════════════════════════════════".bright_blue().bold());
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════"
+            .bright_blue()
+            .bold()
+    );
+    println!(
+        "{}",
+        "         AUTONOMOUS VEHICLE CONTROLLER                 "
+            .bright_blue()
+            .bold()
+    );
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════"
+            .bright_blue()
+            .bold()
+    );
     println!();
 
     // Initialize HSM
@@ -55,26 +70,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         &hsm,
     );
 
-    protected_mem.provision_firmware(firmware, &hsm)
+    protected_mem
+        .provision_firmware(firmware, &hsm)
         .expect("Failed to provision firmware");
 
     // Perform secure boot
     println!("{} Performing secure boot...", "→".cyan());
-    protected_mem.secure_boot(&hsm)
-        .expect("Secure boot failed");
+    protected_mem.secure_boot(&hsm).expect("Secure boot failed");
 
     println!("{} Connecting to CAN bus at {}...", "→".cyan(), BUS_ADDRESS);
     let client = BusClient::connect(BUS_ADDRESS, ECU_NAME.to_string()).await?;
     println!("{} Connected to CAN bus!", "✓".green().bold());
-    println!("{} Starting secured autonomous control loop ({}ms interval)", "→".cyan(), CONTROL_INTERVAL_MS);
+    println!(
+        "{} Starting secured autonomous control loop ({}ms interval)",
+        "→".cyan(),
+        CONTROL_INTERVAL_MS
+    );
     println!();
 
     // Initialize attack detector
     let attack_detector = Arc::new(Mutex::new(AttackDetector::new(ECU_NAME.to_string())));
     println!("{} Attack detection initialized", "✓".green().bold());
-    println!("   • CRC error threshold: {} consecutive errors", autonomous_vehicle_sim::error_handling::CRC_ERROR_THRESHOLD);
-    println!("   • MAC error threshold: {} consecutive errors", autonomous_vehicle_sim::error_handling::MAC_ERROR_THRESHOLD);
-    println!("   • Unsecured frame threshold: {} (immediate)", autonomous_vehicle_sim::error_handling::UNSECURED_FRAME_THRESHOLD);
+    println!(
+        "   • CRC error threshold: {} consecutive errors",
+        autonomous_vehicle_sim::error_handling::CRC_ERROR_THRESHOLD
+    );
+    println!(
+        "   • MAC error threshold: {} consecutive errors",
+        autonomous_vehicle_sim::error_handling::MAC_ERROR_THRESHOLD
+    );
+    println!(
+        "   • Unsecured frame threshold: {} (immediate)",
+        autonomous_vehicle_sim::error_handling::UNSECURED_FRAME_THRESHOLD
+    );
     println!();
 
     // Split client into reader and writer
@@ -132,7 +160,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             }; // Lock is dropped here
 
                             if !should_continue {
-                                println!("{} Frame rejected - security threshold exceeded", "✗".red());
+                                println!(
+                                    "{} Frame rejected - security threshold exceeded",
+                                    "✗".red()
+                                );
                             }
                         }
                     }
@@ -141,11 +172,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     // Unsecured frame detected - record as attack
                     let should_continue = {
                         let mut detector = detector_clone.lock().unwrap();
-                        detector.record_error(ValidationError::UnsecuredFrame, &unsecured_frame.source)
+                        detector
+                            .record_error(ValidationError::UnsecuredFrame, &unsecured_frame.source)
                     };
 
                     if !should_continue {
-                        eprintln!("{} Unsecured frame rejected - attack threshold exceeded", "✗".red());
+                        eprintln!(
+                            "{} Unsecured frame rejected - attack threshold exceeded",
+                            "✗".red()
+                        );
                     }
                 }
                 Err(_) => break,
@@ -174,17 +209,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             // Display warning message once and broadcast shutdown status
             if !warning_displayed {
                 eprintln!();
-                eprintln!("{}", "═══════════════════════════════════════════════════════".red().bold());
-                eprintln!("{}", "   AUTONOMOUS CONTROLLER DEACTIVATED            ".red().bold());
-                eprintln!("{}", "═══════════════════════════════════════════════════════".red().bold());
+                eprintln!(
+                    "{}",
+                    "═══════════════════════════════════════════════════════"
+                        .red()
+                        .bold()
+                );
+                eprintln!(
+                    "{}",
+                    "   AUTONOMOUS CONTROLLER DEACTIVATED            "
+                        .red()
+                        .bold()
+                );
+                eprintln!(
+                    "{}",
+                    "═══════════════════════════════════════════════════════"
+                        .red()
+                        .bold()
+                );
                 eprintln!();
                 eprintln!("{} Attack detected on CAN bus!", "⚠️".red().bold());
-                eprintln!("{} Controller has been STOPPED for safety.", "⚠️".red().bold());
-                eprintln!("{} Sensor monitoring continues but NO COMMANDS will be sent.", "→".yellow());
+                eprintln!(
+                    "{} Controller has been STOPPED for safety.",
+                    "⚠️".red().bold()
+                );
+                eprintln!(
+                    "{} Sensor monitoring continues but NO COMMANDS will be sent.",
+                    "→".yellow()
+                );
                 eprintln!();
-                eprintln!("{} {} to resume operation.", "→".yellow(), "RESTART REQUIRED".red().bold());
+                eprintln!(
+                    "{} {} to resume operation.",
+                    "→".yellow(),
+                    "RESTART REQUIRED".red().bold()
+                );
                 eprintln!();
-                eprintln!("{}", "═══════════════════════════════════════════════════════".red().bold());
+                eprintln!(
+                    "{}",
+                    "═══════════════════════════════════════════════════════"
+                        .red()
+                        .bold()
+                );
                 eprintln!();
 
                 // Broadcast emergency shutdown status on CAN bus (0x400)
@@ -203,7 +268,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             // Periodically re-broadcast shutdown status so monitor always shows it
             if counter % 10 == 0 {
-                let status_data = vec![0xFF];  // 0xFF = Emergency Shutdown
+                let status_data = vec![0xFF]; // 0xFF = Emergency Shutdown
                 let status_frame = SecuredCanFrame::new(
                     can_ids::AUTO_STATUS,
                     status_data,
@@ -228,7 +293,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
 
         // Run control algorithm (firmware in protected memory)
-        let (brake_cmd, throttle_cmd, steering_cmd) = compute_control_commands(&vehicle_state, counter);
+        let (brake_cmd, throttle_cmd, steering_cmd) =
+            compute_control_commands(&vehicle_state, counter);
 
         // Send brake command (secured)
         let brake_data = vec![encoding::encode_brake_pressure(brake_cmd)];
@@ -289,30 +355,30 @@ fn update_vehicle_state(state: &mut VehicleState, secured_frame: &SecuredCanFram
     match secured_frame.can_id {
         id if id == can_ids::WHEEL_SPEED_FL => {
             state.wheel_speeds[0] = encoding::decode_wheel_speed(&secured_frame.data);
-        },
+        }
         id if id == can_ids::WHEEL_SPEED_FR => {
             state.wheel_speeds[1] = encoding::decode_wheel_speed(&secured_frame.data);
-        },
+        }
         id if id == can_ids::WHEEL_SPEED_RL => {
             state.wheel_speeds[2] = encoding::decode_wheel_speed(&secured_frame.data);
-        },
+        }
         id if id == can_ids::WHEEL_SPEED_RR => {
             state.wheel_speeds[3] = encoding::decode_wheel_speed(&secured_frame.data);
-        },
+        }
         id if id == can_ids::ENGINE_RPM => {
             state.engine_rpm = encoding::decode_rpm(&secured_frame.data);
-        },
+        }
         id if id == can_ids::ENGINE_THROTTLE => {
             if !secured_frame.data.is_empty() {
                 state.throttle_position = encoding::decode_throttle(secured_frame.data[0]);
             }
-        },
+        }
         id if id == can_ids::STEERING_ANGLE => {
             state.steering_angle = encoding::decode_steering_angle(&secured_frame.data);
-        },
+        }
         id if id == can_ids::STEERING_TORQUE => {
             state.steering_torque = encoding::decode_steering_torque(&secured_frame.data);
-        },
+        }
         _ => {}
     }
     state.timestamp = Some(secured_frame.timestamp);

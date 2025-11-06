@@ -31,20 +31,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     draw_ui(&mut stdout, &config)?;
 
     // Connect to bus server
-    writeln!(stdout, "\r\n\nConnecting to CAN bus at {}...\r", BUS_ADDRESS)?;
+    writeln!(
+        stdout,
+        "\r\n\nConnecting to CAN bus at {}...\r",
+        BUS_ADDRESS
+    )?;
     stdout.flush()?;
 
-    let client = match vhsm_can::network::BusClient::connect(BUS_ADDRESS, ECU_NAME.to_string()).await {
-        Ok(c) => c,
-        Err(e) => {
-            terminal::disable_raw_mode()?;
-            eprintln!("\r\n{}Failed to connect: {}{}", "✗ ".red(), e, "".clear());
-            eprintln!("\r\nStart the bus server with: cargo run --bin bus_server");
-            return Ok(());
-        }
-    };
+    let client =
+        match vhsm_can::network::BusClient::connect(BUS_ADDRESS, ECU_NAME.to_string()).await {
+            Ok(c) => c,
+            Err(e) => {
+                terminal::disable_raw_mode()?;
+                eprintln!("\r\n{}Failed to connect: {}{}", "✗ ".red(), e, "".clear());
+                eprintln!("\r\nStart the bus server with: cargo run --bin bus_server");
+                return Ok(());
+            }
+        };
 
-    writeln!(stdout, "\r{}Connected to CAN bus!{}\r", "✓ ".green(), "".clear())?;
+    writeln!(
+        stdout,
+        "\r{}Connected to CAN bus!{}\r",
+        "✓ ".green(),
+        "".clear()
+    )?;
     stdout.flush()?;
     tokio::time::sleep(Duration::from_millis(500)).await;
 
@@ -89,7 +99,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                                 CanId::Standard(id) => format!("{:03X}", id),
                                                 CanId::Extended(id) => format!("{:08X}", id),
                                             },
-                                            frame.data
+                                            frame
+                                                .data
                                                 .iter()
                                                 .map(|b| format!("{:02X}", b))
                                                 .collect::<Vec<_>>()
@@ -148,17 +159,23 @@ fn draw_ui(stdout: &mut io::Stdout, config: &EcuConfig) -> io::Result<()> {
     writeln!(
         stdout,
         "\r{}",
-        "═══════════════════════════════════════════════════════════════════════════════".green().bold()
+        "═══════════════════════════════════════════════════════════════════════════════"
+            .green()
+            .bold()
     )?;
     writeln!(
         stdout,
         "\r{}",
-        "                           INPUT ECU                                          ".green().bold()
+        "                           INPUT ECU                                          "
+            .green()
+            .bold()
     )?;
     writeln!(
         stdout,
         "\r{}",
-        "═══════════════════════════════════════════════════════════════════════════════".green().bold()
+        "═══════════════════════════════════════════════════════════════════════════════"
+            .green()
+            .bold()
     )?;
     writeln!(
         stdout,
@@ -182,7 +199,8 @@ fn draw_ui(stdout: &mut io::Stdout, config: &EcuConfig) -> io::Result<()> {
     writeln!(
         stdout,
         "\r{}",
-        "───────────────────────────────────────────────────────────────────────────────".bright_black()
+        "───────────────────────────────────────────────────────────────────────────────"
+            .bright_black()
     )?;
     writeln!(stdout, "\r{}", "SEND FRAME:".yellow().bold())?;
     writeln!(
@@ -190,18 +208,15 @@ fn draw_ui(stdout: &mut io::Stdout, config: &EcuConfig) -> io::Result<()> {
         "\r{}",
         "Format: <CAN_ID> <byte1> <byte2> ... (all in hex)".bright_black()
     )?;
-    writeln!(
-        stdout,
-        "\r{}",
-        "Example: 123 01 02 03 04".bright_black()
-    )?;
+    writeln!(stdout, "\r{}", "Example: 123 01 02 03 04".bright_black())?;
     writeln!(stdout, "\r")?;
     writeln!(stdout, "\r> ")?;
     writeln!(stdout, "\r")?;
     writeln!(
         stdout,
         "\r{}",
-        "───────────────────────────────────────────────────────────────────────────────".bright_black()
+        "───────────────────────────────────────────────────────────────────────────────"
+            .bright_black()
     )?;
     writeln!(stdout, "\r{}", "SENT FRAMES:".cyan().bold())?;
     writeln!(stdout, "\r")?;

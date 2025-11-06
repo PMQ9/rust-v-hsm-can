@@ -3,14 +3,13 @@
 /// This module provides attack detection capabilities by tracking CRC and MAC
 /// validation failures. It implements tolerance for occasional errors (signal
 /// degradation, noise) while detecting sustained attack patterns.
-
 use colored::*;
 use std::fmt;
 
 /// Thresholds for attack detection
-pub const CRC_ERROR_THRESHOLD: u32 = 5;  // Allow 5 consecutive CRC errors (noise tolerance)
-pub const MAC_ERROR_THRESHOLD: u32 = 3;  // Allow 3 consecutive MAC errors (noise tolerance)
-pub const UNSECURED_FRAME_THRESHOLD: u32 = 1;  // Immediately trigger on unsecured frames (no tolerance)
+pub const CRC_ERROR_THRESHOLD: u32 = 5; // Allow 5 consecutive CRC errors (noise tolerance)
+pub const MAC_ERROR_THRESHOLD: u32 = 3; // Allow 3 consecutive MAC errors (noise tolerance)
+pub const UNSECURED_FRAME_THRESHOLD: u32 = 1; // Immediately trigger on unsecured frames (no tolerance)
 
 /// Types of validation errors
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,7 +185,8 @@ impl AttackDetector {
     /// Record a successful validation (resets consecutive error counters)
     pub fn record_success(&mut self) {
         // Reset consecutive error counters on successful validation
-        let had_errors = self.crc_error_count > 0 || self.mac_error_count > 0 || self.unsecured_frame_count > 0;
+        let had_errors =
+            self.crc_error_count > 0 || self.mac_error_count > 0 || self.unsecured_frame_count > 0;
 
         if had_errors && self.state != SecurityState::UnderAttack {
             println!(
@@ -218,7 +218,11 @@ impl AttackDetector {
         println!("{}", "═══════════════════════════════════════".red().bold());
         println!();
         println!("{} ECU: {}", "→".red(), self.ecu_name.yellow().bold());
-        println!("{} Error Type: {}", "→".red(), error_type.to_string().red().bold());
+        println!(
+            "{} Error Type: {}",
+            "→".red(),
+            error_type.to_string().red().bold()
+        );
 
         match error_type {
             ValidationError::CrcMismatch => {
@@ -246,16 +250,28 @@ impl AttackDetector {
                     self.unsecured_frame_count.to_string().red().bold(),
                     UNSECURED_FRAME_THRESHOLD
                 );
-                println!("{} Total unsecured frames: {}", "→".red(), self.total_unsecured_frames);
+                println!(
+                    "{} Total unsecured frames: {}",
+                    "→".red(),
+                    self.total_unsecured_frames
+                );
                 println!();
-                println!("{} {}", "→".red(), "ATTACK TYPE: Frame Injection".red().bold());
+                println!(
+                    "{} {}",
+                    "→".red(),
+                    "ATTACK TYPE: Frame Injection".red().bold()
+                );
                 println!("   • Attacker is sending frames without valid MAC");
                 println!("   • This indicates unauthorized ECU on the bus");
             }
         }
 
         println!();
-        println!("{} {}", "→".red(), "PROTECTIVE MEASURES ACTIVATED:".yellow().bold());
+        println!(
+            "{} {}",
+            "→".red(),
+            "PROTECTIVE MEASURES ACTIVATED:".yellow().bold()
+        );
         println!("   • Rejecting all unverified frames");
         println!("   • Entering fail-safe mode");
         println!("   • Maintaining last known safe state");

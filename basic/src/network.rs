@@ -24,7 +24,10 @@ pub struct BusClient {
 
 impl BusClient {
     /// Connect to the bus server
-    pub async fn connect(addr: &str, client_name: String) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn connect(
+        addr: &str,
+        client_name: String,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let stream = TcpStream::connect(addr).await?;
         let mut client = Self {
             stream,
@@ -40,7 +43,10 @@ impl BusClient {
     }
 
     /// Send a message to the server
-    pub async fn send_message(&mut self, msg: &NetMessage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn send_message(
+        &mut self,
+        msg: &NetMessage,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let json = serde_json::to_string(msg)?;
         self.stream.write_all(json.as_bytes()).await?;
         self.stream.write_all(b"\n").await?;
@@ -49,12 +55,17 @@ impl BusClient {
     }
 
     /// Send a CAN frame to the bus
-    pub async fn send_frame(&mut self, frame: CanFrame) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn send_frame(
+        &mut self,
+        frame: CanFrame,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.send_message(&NetMessage::CanFrame(frame)).await
     }
 
     /// Receive a message from the server (blocking)
-    pub async fn receive_message(&mut self) -> Result<NetMessage, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn receive_message(
+        &mut self,
+    ) -> Result<NetMessage, Box<dyn std::error::Error + Send + Sync>> {
         let mut reader = BufReader::new(&mut self.stream);
         let mut line = String::new();
         reader.read_line(&mut line).await?;
@@ -74,9 +85,7 @@ impl BusClient {
             BusReader {
                 reader: BufReader::new(read_half),
             },
-            BusWriter {
-                writer: write_half,
-            },
+            BusWriter { writer: write_half },
         )
     }
 }
@@ -88,7 +97,9 @@ pub struct BusReader {
 
 impl BusReader {
     /// Receive a message from the server
-    pub async fn receive_message(&mut self) -> Result<NetMessage, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn receive_message(
+        &mut self,
+    ) -> Result<NetMessage, Box<dyn std::error::Error + Send + Sync>> {
         let mut line = String::new();
         self.reader.read_line(&mut line).await?;
 
@@ -108,7 +119,10 @@ pub struct BusWriter {
 
 impl BusWriter {
     /// Send a message to the server
-    pub async fn send_message(&mut self, msg: &NetMessage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn send_message(
+        &mut self,
+        msg: &NetMessage,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let json = serde_json::to_string(msg)?;
         self.writer.write_all(json.as_bytes()).await?;
         self.writer.write_all(b"\n").await?;
@@ -117,7 +131,10 @@ impl BusWriter {
     }
 
     /// Send a CAN frame to the bus
-    pub async fn send_frame(&mut self, frame: CanFrame) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn send_frame(
+        &mut self,
+        frame: CanFrame,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.send_message(&NetMessage::CanFrame(frame)).await
     }
 }
