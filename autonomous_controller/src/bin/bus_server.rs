@@ -5,7 +5,6 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, Mutex};
 use autonomous_vehicle_sim::network::NetMessage;
-use autonomous_vehicle_sim::types::CanFrame;
 use autonomous_vehicle_sim::hsm::SecuredCanFrame;
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";

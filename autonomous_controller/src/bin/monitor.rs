@@ -27,7 +27,6 @@ struct Dashboard {
     controller_rx: HashMap<CanId, LatestFrame>,
     actuators: HashMap<CanId, LatestFrame>,
     frame_count: u64,
-    security_failures: u64,
     unsecured_frame_count: u64,
     recent_attackers: Vec<String>, // Track sources of unsecured frames
     controller_emergency_shutdown: bool, // Controller in emergency shutdown mode
@@ -163,7 +162,6 @@ impl Dashboard {
             controller_rx: HashMap::new(),
             actuators: HashMap::new(),
             frame_count: 0,
-            security_failures: 0,
             unsecured_frame_count: 0,
             recent_attackers: Vec::new(),
             controller_emergency_shutdown: false,

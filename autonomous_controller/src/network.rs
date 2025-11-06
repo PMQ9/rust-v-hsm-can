@@ -82,6 +82,11 @@ impl BusClient {
             },
         )
     }
+
+    /// Get the client name
+    pub fn client_name(&self) -> &str {
+        &self.client_name
+    }
 }
 
 /// Read half of the bus client

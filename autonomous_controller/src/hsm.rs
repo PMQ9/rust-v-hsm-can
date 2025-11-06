@@ -145,8 +145,9 @@ impl VirtualHSM {
         mac.update(&session_counter.to_le_bytes());
 
         let result = mac.finalize();
+        let bytes = result.into_bytes();
         let mut output = [0u8; 32];
-        output.copy_from_slice(result.into_bytes().as_slice());
+        output.copy_from_slice(&bytes);
         output
     }
 
@@ -207,8 +208,9 @@ impl VirtualHSM {
         mac.update(firmware_fingerprint);
 
         let result = mac.finalize();
+        let bytes = result.into_bytes();
         let mut output = [0u8; 32];
-        output.copy_from_slice(result.into_bytes().as_slice());
+        output.copy_from_slice(&bytes);
         output
     }
 
