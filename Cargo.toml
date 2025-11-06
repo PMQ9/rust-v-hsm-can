@@ -1,0 +1,11 @@
+[package]
+name = "rust-v-hsm-can"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+members = ["basic", "autonomous_controller"]
+
+[dev-dependencies]
+tokio = { version = "1.0", features = ["full"] }
+autonomous_vehicle_sim = { path = "./autonomous_controller" }
