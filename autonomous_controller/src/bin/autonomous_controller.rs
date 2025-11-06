@@ -1,11 +1,12 @@
 use colored::*;
 use std::time::Duration;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use autonomous_vehicle_sim::network::{BusClient, NetMessage};
 use autonomous_vehicle_sim::types::{can_ids, encoding, VehicleState};
 use autonomous_vehicle_sim::hsm::{VirtualHSM, SecuredCanFrame, SignedFirmware};
 use autonomous_vehicle_sim::protected_memory::ProtectedMemory;
+use autonomous_vehicle_sim::error_handling::{AttackDetector, ValidationError};
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
 const ECU_NAME: &str = "AUTONOMOUS_CTRL";
@@ -68,25 +69,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("{} Starting secured autonomous control loop ({}ms interval)", "→".cyan(), CONTROL_INTERVAL_MS);
     println!();
 
+    // Initialize attack detector
+    let attack_detector = Arc::new(Mutex::new(AttackDetector::new(ECU_NAME.to_string())));
+    println!("{} Attack detection initialized", "✓".green().bold());
+    println!("   • CRC error threshold: {} consecutive errors", autonomous_vehicle_sim::error_handling::CRC_ERROR_THRESHOLD);
+    println!("   • MAC error threshold: {} consecutive errors", autonomous_vehicle_sim::error_handling::MAC_ERROR_THRESHOLD);
+    println!("   • Unsecured frame threshold: {} (immediate)", autonomous_vehicle_sim::error_handling::UNSECURED_FRAME_THRESHOLD);
+    println!();
+
     // Split client into reader and writer
     let (mut reader, mut writer) = client.split();
 
     // Channel for communication between receiver and control loop
     let (frame_tx, mut frame_rx) = mpsc::channel::<SecuredCanFrame>(100);
 
-    // Attack detection flag (shared between receiver task and control loop)
-    let attack_detected = Arc::new(AtomicBool::new(false));
-    let attack_detected_clone = attack_detected.clone();
+    // Clone attack detector for receiver task
+    let detector_clone = Arc::clone(&attack_detector);
 
     // Clone HSM for the receiver task
     let hsm_clone = hsm.clone();
 
-    // Spawn receiver task with MAC/CRC verification
+    // Spawn receiver task with MAC/CRC verification and attack detection
     tokio::spawn(async move {
-        let mut verified_count = 0u64;
-        let mut failed_count = 0u64;
-        let mut attack_warning_shown = false;
-
         loop {
             match reader.receive_message().await {
                 Ok(NetMessage::SecuredCanFrame(secured_frame)) => {
@@ -95,60 +99,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         continue;
                     }
 
+                    // Check if we should still accept frames
+                    let should_accept = {
+                        let detector = detector_clone.lock().unwrap();
+                        detector.should_accept_frames()
+                    }; // Lock is dropped here
+
+                    if !should_accept {
+                        // Under attack - reject all frames
+                        continue;
+                    }
+
                     // Verify MAC and CRC
                     match secured_frame.verify(&hsm_clone) {
                         Ok(_) => {
-                            verified_count += 1;
+                            // Successful verification - reset error counters
+                            {
+                                let mut detector = detector_clone.lock().unwrap();
+                                detector.record_success();
+                            } // Lock is dropped here
+
                             if frame_tx.send(secured_frame).await.is_err() {
                                 break;
                             }
                         }
                         Err(e) => {
-                            failed_count += 1;
+                            // Record the error with proper type classification
+                            let should_continue = {
+                                let mut detector = detector_clone.lock().unwrap();
+                                let error_type = ValidationError::from_verify_error(&e);
+                                detector.record_error(error_type, &secured_frame.source)
+                            }; // Lock is dropped here
 
-                            // Check if this is an unsecured frame attack
-                            if e.contains("UNSECURED FRAME") {
-                                // SET ATTACK FLAG - STOP CONTROLLER!
-                                attack_detected_clone.store(true, Ordering::SeqCst);
-
-                                // Only display warning once to prevent flickering
-                                if !attack_warning_shown {
-                                    eprintln!();
-                                    eprintln!("{} {}", "ATTACK DETECTED:".red().bold(), "Unsecured Frame Injection".red());
-                                    eprintln!("  {}", e.red());
-                                    eprintln!("  CAN ID: 0x{:03X}", secured_frame.can_id.value());
-                                    eprintln!("  Frame has NO MAC/CRC - unauthorized ECU on bus!");
-                                    eprintln!("  Verified: {}, Failed: {}", verified_count, failed_count);
-                                    eprintln!("  {} Attack flag set to TRUE - Controller will shutdown", "→".yellow().bold());
-                                    eprintln!("  {} Suppressing further attack messages to prevent spam", "→".yellow());
-                                    eprintln!();
-                                    attack_warning_shown = true;
-                                }
-                            } else {
-                                eprintln!("{} Security verification failed: {}", "⚠".yellow().bold(), e);
-                                eprintln!("  Verified: {}, Failed: {}", verified_count, failed_count);
+                            if !should_continue {
+                                println!("{} Frame rejected - security threshold exceeded", "✗".red());
                             }
                         }
                     }
                 }
                 Ok(NetMessage::CanFrame(unsecured_frame)) => {
-                    // Unsecured frame detected - this is a potential attack!
-                    // SET ATTACK FLAG - STOP CONTROLLER!
-                    attack_detected_clone.store(true, Ordering::SeqCst);
+                    // Unsecured frame detected - record as attack
+                    let should_continue = {
+                        let mut detector = detector_clone.lock().unwrap();
+                        detector.record_error(ValidationError::UnsecuredFrame, &unsecured_frame.source)
+                    };
 
-                    failed_count += 1;
-
-                    // Only display warning once to prevent flickering
-                    if !attack_warning_shown {
-                        eprintln!();
-                        eprintln!("{} {} ATTACK: Unsecured frame detected!", "⚠️".red().bold(), "SECURITY".red().bold());
-                        eprintln!("  Source: {}", unsecured_frame.source.red());
-                        eprintln!("  CAN ID: 0x{:03X}", unsecured_frame.id.value());
-                        eprintln!("  Frame has NO MAC - potential injection attack!");
-                        eprintln!("  Verified: {}, Failed: {}", verified_count, failed_count);
-                        eprintln!("  {} Suppressing further attack messages to prevent spam", "→".yellow());
-                        eprintln!();
-                        attack_warning_shown = true;
+                    if !should_continue {
+                        eprintln!("{} Unsecured frame rejected - attack threshold exceeded", "✗".red());
                     }
                 }
                 Err(_) => break,
@@ -168,7 +165,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
 
         // CHECK FOR ATTACK - STOP SENDING COMMANDS IF DETECTED
-        let is_under_attack = attack_detected.load(Ordering::SeqCst);
+        let is_under_attack = {
+            let detector = attack_detector.lock().unwrap();
+            !detector.should_accept_frames()
+        };
+
         if is_under_attack {
             // Display warning message once and broadcast shutdown status
             if !warning_displayed {
