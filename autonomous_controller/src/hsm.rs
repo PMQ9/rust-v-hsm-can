@@ -6,6 +6,8 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fmt;
 
+use crate::performance::{HsmOperation, HsmPerformanceEvaluator};
+
 /// Reasons why MAC verification can fail
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MacFailureReason {
@@ -81,6 +83,9 @@ pub struct VirtualHSM {
 
     /// Random number generator
     rng: StdRng,
+
+    /// Performance evaluator for HSM operations
+    performance_evaluator: HsmPerformanceEvaluator,
 }
 
 impl VirtualHSM {
@@ -101,6 +106,7 @@ impl VirtualHSM {
             session_counter: 0,
             ecu_id,
             rng,
+            performance_evaluator: HsmPerformanceEvaluator::new(10000), // Keep last 10k measurements
         };
 
         // Generate deterministic keys based on seed
@@ -135,8 +141,21 @@ impl VirtualHSM {
         self.session_counter = self.session_counter.wrapping_add(1);
     }
 
+    /// Get reference to performance evaluator
+    pub fn performance_evaluator(&self) -> &HsmPerformanceEvaluator {
+        &self.performance_evaluator
+    }
+
+    /// Get mutable reference to performance evaluator
+    pub fn performance_evaluator_mut(&mut self) -> &mut HsmPerformanceEvaluator {
+        &mut self.performance_evaluator
+    }
+
     /// Generate Message Authentication Code (MAC) using HMAC-SHA256
     pub fn generate_mac(&self, data: &[u8], session_counter: u64) -> [u8; 32] {
+        // Start timing
+        let start = self.performance_evaluator.start_measurement();
+
         let mut mac = Hmac::<Sha256>::new_from_slice(&self.symmetric_comm_key)
             .expect("HMAC can take key of any size");
 
@@ -148,6 +167,14 @@ impl VirtualHSM {
         let bytes = result.into_bytes();
         let mut output = [0u8; 32];
         output.copy_from_slice(&bytes);
+
+        // Record timing
+        self.performance_evaluator.record_measurement(
+            start,
+            HsmOperation::GenerateMac,
+            data.len(),
+        );
+
         output
     }
 
@@ -159,10 +186,19 @@ impl VirtualHSM {
         session_counter: u64,
         source_ecu: &str,
     ) -> Result<(), MacFailureReason> {
+        // Start timing
+        let start = self.performance_evaluator.start_measurement();
+
         // Get the MAC key for the source ECU
         let key = match self.mac_verification_keys.get(source_ecu) {
             Some(k) => k,
             None => {
+                // Record timing even on failure
+                self.performance_evaluator.record_measurement(
+                    start,
+                    HsmOperation::VerifyMac,
+                    data.len(),
+                );
                 return Err(MacFailureReason::NoKeyRegistered);
             }
         };
@@ -174,19 +210,53 @@ impl VirtualHSM {
         expected_mac.update(&session_counter.to_le_bytes());
 
         // Constant-time comparison
-        expected_mac
+        let result = expected_mac
             .verify_slice(mac)
-            .map_err(|_| MacFailureReason::CryptoFailure)
+            .map_err(|_| MacFailureReason::CryptoFailure);
+
+        // Record timing
+        self.performance_evaluator.record_measurement(
+            start,
+            HsmOperation::VerifyMac,
+            data.len(),
+        );
+
+        result
     }
 
     /// Calculate CRC32 checksum
     pub fn calculate_crc(&self, data: &[u8]) -> u32 {
-        crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC).checksum(data)
+        // Start timing
+        let start = self.performance_evaluator.start_measurement();
+
+        let crc = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC).checksum(data);
+
+        // Record timing
+        self.performance_evaluator.record_measurement(
+            start,
+            HsmOperation::CalculateCrc,
+            data.len(),
+        );
+
+        crc
     }
 
     /// Verify CRC32 checksum
     pub fn verify_crc(&self, data: &[u8], expected_crc: u32) -> bool {
-        self.calculate_crc(data) == expected_crc
+        // Start timing
+        let start = self.performance_evaluator.start_measurement();
+
+        let calculated_crc = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC).checksum(data);
+        let result = calculated_crc == expected_crc;
+
+        // Record timing
+        self.performance_evaluator.record_measurement(
+            start,
+            HsmOperation::VerifyCrc,
+            data.len(),
+        );
+
+        result
     }
 
     /// Generate firmware fingerprint (SHA256 hash)

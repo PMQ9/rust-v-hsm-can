@@ -345,6 +345,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
         }
 
+        // Display HSM performance statistics every 50 iterations (5 seconds)
+        if counter % 50 == 0 && counter > 0 {
+            let perf_eval = hsm.performance_evaluator();
+            if perf_eval.measurement_count() > 0 {
+                println!();
+                println!(
+                    "{} HSM Performance: {}",
+                    "📊".bright_cyan(),
+                    perf_eval.get_summary()
+                );
+            }
+        }
+
         counter += 1;
         tokio::time::sleep(Duration::from_millis(CONTROL_INTERVAL_MS)).await;
     }
