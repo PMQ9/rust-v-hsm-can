@@ -47,3 +47,7 @@ jobs:
       run: |
         rustup component add clippy
         cargo clippy -- -D warnings
+
+    - name: Run injection attack regression tests
+      run: |
+        cargo test --test attack_regression_tests -- --ignored --test-threads=1 --nocapture
