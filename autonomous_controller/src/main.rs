@@ -28,7 +28,10 @@ fn main() {
     );
     if perf_mode {
         println!("{} Performance evaluation mode enabled", "ℹ".bright_blue());
-        println!("{} All ECUs will track HSM performance metrics", "→".bright_blue());
+        println!(
+            "{} All ECUs will track HSM performance metrics",
+            "→".bright_blue()
+        );
     }
     println!();
 
@@ -177,13 +180,34 @@ fn main() {
     // Start monitor (displays dashboard + performance stats if in perf mode)
     if perf_mode {
         println!();
-        println!("{}", "═══════════════════════════════════════════════════════════════".bright_blue().bold());
+        println!(
+            "{}",
+            "═══════════════════════════════════════════════════════════════"
+                .bright_blue()
+                .bold()
+        );
         println!("{} PERFORMANCE MODE ENABLED", "→".bright_blue().bold());
-        println!("{}", "═══════════════════════════════════════════════════════════════".bright_blue().bold());
-        println!("{} Performance stats will be shown in monitor dashboard", "ℹ".bright_blue());
-        println!("{} Statistics update every 10 seconds (100 iterations)", "ℹ".bright_blue());
+        println!(
+            "{}",
+            "═══════════════════════════════════════════════════════════════"
+                .bright_blue()
+                .bold()
+        );
+        println!(
+            "{} Performance stats will be shown in monitor dashboard",
+            "ℹ".bright_blue()
+        );
+        println!(
+            "{} Statistics update every 10 seconds (100 iterations)",
+            "ℹ".bright_blue()
+        );
         println!("{} Press 'q' in monitor to exit", "ℹ".bright_blue());
-        println!("{}", "═══════════════════════════════════════════════════════════════".bright_blue().bold());
+        println!(
+            "{}",
+            "═══════════════════════════════════════════════════════════════"
+                .bright_blue()
+                .bold()
+        );
         println!();
     }
 

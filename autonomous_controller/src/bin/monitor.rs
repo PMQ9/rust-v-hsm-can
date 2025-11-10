@@ -419,11 +419,7 @@ impl Dashboard {
         // PERFORMANCE Section (if any stats available)
         if !self.performance_stats.is_empty() {
             writeln!(stdout, "\r")?;
-            writeln!(
-                stdout,
-                "\r{}",
-                "PERFORMANCE (HSM Metrics):".yellow().bold()
-            )?;
+            writeln!(stdout, "\r{}", "PERFORMANCE (HSM Metrics):".yellow().bold())?;
             self.draw_performance_stats(stdout)?;
         }
 
@@ -588,11 +584,7 @@ impl Dashboard {
             "Frame Create".bright_yellow().bold(),
             "E2E Latency (avg/min/max)".bright_yellow().bold()
         )?;
-        writeln!(
-            stdout,
-            "\r  {}",
-            "─".repeat(110).bright_black()
-        )?;
+        writeln!(stdout, "\r  {}", "─".repeat(110).bright_black())?;
 
         // Draw table rows
         for ecu_name in ecus {

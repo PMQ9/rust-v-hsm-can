@@ -106,51 +106,96 @@ impl PerformanceMetrics {
 
     /// Print performance statistics
     pub fn print_stats(&self, ecu_name: &str) {
-        println!("\n{}", "═══════════════════════════════════════════════════════".bright_blue());
-        println!("{} HSM Performance Statistics for {}", "ℹ".bright_blue(), ecu_name.bright_white().bold());
-        println!("{}", "═══════════════════════════════════════════════════════".bright_blue());
+        println!(
+            "\n{}",
+            "═══════════════════════════════════════════════════════".bright_blue()
+        );
+        println!(
+            "{} HSM Performance Statistics for {}",
+            "ℹ".bright_blue(),
+            ecu_name.bright_white().bold()
+        );
+        println!(
+            "{}",
+            "═══════════════════════════════════════════════════════".bright_blue()
+        );
 
         if self.mac_gen_count > 0 {
             let avg_mac_gen = self.mac_gen_time_us as f64 / self.mac_gen_count as f64;
-            println!("MAC Generation:    {} ops, avg {:.2} μs/op", self.mac_gen_count, avg_mac_gen);
+            println!(
+                "MAC Generation:    {} ops, avg {:.2} μs/op",
+                self.mac_gen_count, avg_mac_gen
+            );
         }
 
         if self.mac_verify_count > 0 {
             let avg_mac_verify = self.mac_verify_time_us as f64 / self.mac_verify_count as f64;
-            println!("MAC Verification:  {} ops, avg {:.2} μs/op", self.mac_verify_count, avg_mac_verify);
+            println!(
+                "MAC Verification:  {} ops, avg {:.2} μs/op",
+                self.mac_verify_count, avg_mac_verify
+            );
         }
 
         if self.crc_calc_count > 0 {
             let avg_crc_calc = self.crc_calc_time_us as f64 / self.crc_calc_count as f64;
-            println!("CRC Calculation:   {} ops, avg {:.2} μs/op", self.crc_calc_count, avg_crc_calc);
+            println!(
+                "CRC Calculation:   {} ops, avg {:.2} μs/op",
+                self.crc_calc_count, avg_crc_calc
+            );
         }
 
         if self.crc_verify_count > 0 {
             let avg_crc_verify = self.crc_verify_time_us as f64 / self.crc_verify_count as f64;
-            println!("CRC Verification:  {} ops, avg {:.2} μs/op", self.crc_verify_count, avg_crc_verify);
+            println!(
+                "CRC Verification:  {} ops, avg {:.2} μs/op",
+                self.crc_verify_count, avg_crc_verify
+            );
         }
 
         if self.frame_create_count > 0 {
-            let avg_frame_create = self.frame_create_time_us as f64 / self.frame_create_count as f64;
-            println!("Frame Creation:    {} ops, avg {:.2} μs/op", self.frame_create_count, avg_frame_create);
+            let avg_frame_create =
+                self.frame_create_time_us as f64 / self.frame_create_count as f64;
+            println!(
+                "Frame Creation:    {} ops, avg {:.2} μs/op",
+                self.frame_create_count, avg_frame_create
+            );
         }
 
         if self.frame_verify_count > 0 {
-            let avg_frame_verify = self.frame_verify_time_us as f64 / self.frame_verify_count as f64;
-            println!("Frame Verification: {} ops, avg {:.2} μs/op", self.frame_verify_count, avg_frame_verify);
+            let avg_frame_verify =
+                self.frame_verify_time_us as f64 / self.frame_verify_count as f64;
+            println!(
+                "Frame Verification: {} ops, avg {:.2} μs/op",
+                self.frame_verify_count, avg_frame_verify
+            );
         }
 
         if !self.e2e_latency_samples.is_empty() {
-            let avg_e2e = self.e2e_latency_samples.iter().sum::<u64>() as f64 / self.e2e_latency_samples.len() as f64;
+            let avg_e2e = self.e2e_latency_samples.iter().sum::<u64>() as f64
+                / self.e2e_latency_samples.len() as f64;
             let min_e2e = *self.e2e_latency_samples.iter().min().unwrap_or(&0);
             let max_e2e = *self.e2e_latency_samples.iter().max().unwrap_or(&0);
-            println!("\nEnd-to-End Latency: {} samples", self.e2e_latency_samples.len());
+            println!(
+                "\nEnd-to-End Latency: {} samples",
+                self.e2e_latency_samples.len()
+            );
             println!("  Average: {:.2} μs ({:.3} ms)", avg_e2e, avg_e2e / 1000.0);
-            println!("  Min:     {} μs ({:.3} ms)", min_e2e, min_e2e as f64 / 1000.0);
-            println!("  Max:     {} μs ({:.3} ms)", max_e2e, max_e2e as f64 / 1000.0);
+            println!(
+                "  Min:     {} μs ({:.3} ms)",
+                min_e2e,
+                min_e2e as f64 / 1000.0
+            );
+            println!(
+                "  Max:     {} μs ({:.3} ms)",
+                max_e2e,
+                max_e2e as f64 / 1000.0
+            );
         }
 
-        println!("{}", "═══════════════════════════════════════════════════════".bright_blue());
+        println!(
+            "{}",
+            "═══════════════════════════════════════════════════════".bright_blue()
+        );
     }
 }
 
@@ -279,7 +324,8 @@ impl VirtualHSM {
 
             // Calculate summary statistics for e2e latency
             let (avg_e2e, min_e2e, max_e2e) = if !m.e2e_latency_samples.is_empty() {
-                let avg = m.e2e_latency_samples.iter().sum::<u64>() as f64 / m.e2e_latency_samples.len() as f64;
+                let avg = m.e2e_latency_samples.iter().sum::<u64>() as f64
+                    / m.e2e_latency_samples.len() as f64;
                 let min = *m.e2e_latency_samples.iter().min().unwrap_or(&0);
                 let max = *m.e2e_latency_samples.iter().max().unwrap_or(&0);
                 (avg, min, max)
