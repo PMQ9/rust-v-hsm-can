@@ -4,6 +4,10 @@ use std::thread;
 use std::time::Duration;
 
 fn main() {
+    // Parse command-line arguments
+    let args: Vec<String> = std::env::args().collect();
+    let perf_mode = args.contains(&"--perf".to_string());
+
     println!(
         "{}",
         "═══════════════════════════════════════════════════════════════"
@@ -22,6 +26,10 @@ fn main() {
             .cyan()
             .bold()
     );
+    if perf_mode {
+        println!("{} Performance evaluation mode enabled", "ℹ".bright_blue());
+        println!("{} All ECUs will track HSM performance metrics", "→".bright_blue());
+    }
     println!();
 
     // Cleanup: Kill any old simulation processes first
@@ -51,12 +59,12 @@ fn main() {
 
     // Start bus server first
     println!("{} Starting CAN bus server...", "→".green());
-    match Command::new("cargo")
-        .args(&["run", "--bin", "bus_server"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-    {
+    let mut bus_cmd = Command::new("cargo");
+    bus_cmd.args(&["run", "--bin", "bus_server"]);
+    if perf_mode {
+        bus_cmd.args(&["--", "--perf"]);
+    }
+    match bus_cmd.stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
         Ok(child) => {
             processes.push(child);
             println!("{} Bus server started", "✓".green().bold());
@@ -83,8 +91,12 @@ fn main() {
     ];
 
     for sensor in &sensors {
-        match Command::new("cargo")
-            .args(&["run", "--bin", sensor])
+        let mut sensor_cmd = Command::new("cargo");
+        sensor_cmd.args(&["run", "--bin", sensor]);
+        if perf_mode {
+            sensor_cmd.args(&["--", "--perf"]);
+        }
+        match sensor_cmd
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -102,8 +114,15 @@ fn main() {
 
     // Start autonomous controller
     println!("\n{} Starting autonomous controller...", "→".green());
-    match Command::new("cargo")
-        .args(&["run", "--bin", "autonomous_controller"])
+    let mut controller_cmd = Command::new("cargo");
+    controller_cmd.args(&["run", "--bin", "autonomous_controller"]);
+    if perf_mode {
+        controller_cmd.args(&["--", "--perf"]);
+        println!("{} Performance tracking enabled", "→".bright_blue());
+    }
+
+    // Suppress controller stdout (monitor will display performance stats in perf mode)
+    match controller_cmd
         .stdout(Stdio::null())
         .stderr(Stdio::inherit()) // Allow stderr to pass through for attack warnings
         .spawn()
@@ -127,8 +146,12 @@ fn main() {
     let actuators = vec!["brake_controller", "steering_controller"];
 
     for actuator in &actuators {
-        match Command::new("cargo")
-            .args(&["run", "--bin", actuator])
+        let mut actuator_cmd = Command::new("cargo");
+        actuator_cmd.args(&["run", "--bin", actuator]);
+        if perf_mode {
+            actuator_cmd.args(&["--", "--perf"]);
+        }
+        match actuator_cmd
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -151,7 +174,19 @@ fn main() {
     );
     thread::sleep(Duration::from_secs(3));
 
-    // Start monitor last (this will display the dashboard)
+    // Start monitor (displays dashboard + performance stats if in perf mode)
+    if perf_mode {
+        println!();
+        println!("{}", "═══════════════════════════════════════════════════════════════".bright_blue().bold());
+        println!("{} PERFORMANCE MODE ENABLED", "→".bright_blue().bold());
+        println!("{}", "═══════════════════════════════════════════════════════════════".bright_blue().bold());
+        println!("{} Performance stats will be shown in monitor dashboard", "ℹ".bright_blue());
+        println!("{} Statistics update every 10 seconds (100 iterations)", "ℹ".bright_blue());
+        println!("{} Press 'q' in monitor to exit", "ℹ".bright_blue());
+        println!("{}", "═══════════════════════════════════════════════════════════════".bright_blue().bold());
+        println!();
+    }
+
     println!("{} Starting monitor (dashboard)...", "→".green());
 
     let mut monitor_process = match Command::new("cargo")

@@ -1,4 +1,4 @@
-use autonomous_vehicle_sim::hsm::SecuredCanFrame;
+use autonomous_vehicle_sim::hsm::{PerformanceSnapshot, SecuredCanFrame};
 use autonomous_vehicle_sim::network::{BusClient, NetMessage};
 use autonomous_vehicle_sim::types::{CanId, can_ids, encoding};
 use colored::*;
@@ -30,6 +30,7 @@ struct Dashboard {
     unsecured_frame_count: u64,
     recent_attackers: Vec<String>, // Track sources of unsecured frames
     controller_emergency_shutdown: bool, // Controller in emergency shutdown mode
+    performance_stats: HashMap<String, PerformanceSnapshot>, // Performance stats by ECU name
 }
 
 #[tokio::main]
@@ -97,11 +98,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Split the client into reader and writer
     let (mut reader, _writer) = client.split();
 
-    // Create a channel to receive frames from the network task
+    // Create channels to receive frames and performance stats from the network task
     // Use larger capacity to handle bursts from multiple ECUs (9 ECUs @ 10Hz = ~100 fps)
     let (frame_tx, mut frame_rx) = mpsc::channel::<SecuredCanFrame>(1000);
+    let (perf_tx, mut perf_rx) = mpsc::channel::<PerformanceSnapshot>(100);
 
-    // Spawn network reader task (monitoring all secured frames)
+    // Spawn network reader task (monitoring all secured frames and performance stats)
     tokio::spawn(async move {
         loop {
             match reader.receive_message().await {
@@ -109,6 +111,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     // Monitor receives all frames without verification
                     // (it's a passive observer, not a security participant)
                     if frame_tx.send(secured_frame).await.is_err() {
+                        break;
+                    }
+                }
+                Ok(NetMessage::PerformanceStats(stats)) => {
+                    // Receive performance statistics from ECUs
+                    if perf_tx.send(stats).await.is_err() {
                         break;
                     }
                 }
@@ -143,8 +151,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             frames_processed += 1;
         }
 
-        // Only redraw if we processed frames AND enough time has passed
-        if frames_processed > 0 && last_draw.elapsed() >= draw_interval {
+        // Process all available performance stats
+        let mut stats_processed = 0;
+        while let Ok(stats) = perf_rx.try_recv() {
+            dashboard.update_performance_stats(stats);
+            stats_processed += 1;
+        }
+
+        // Only redraw if we processed frames/stats AND enough time has passed
+        if (frames_processed > 0 || stats_processed > 0) && last_draw.elapsed() >= draw_interval {
             dashboard.draw(&mut stdout)?;
             last_draw = std::time::Instant::now();
         }
@@ -176,6 +191,7 @@ impl Dashboard {
             unsecured_frame_count: 0,
             recent_attackers: Vec::new(),
             controller_emergency_shutdown: false,
+            performance_stats: HashMap::new(),
         }
     }
 
@@ -254,6 +270,11 @@ impl Dashboard {
                     .insert(secured_frame.can_id, latest.clone());
             }
         }
+    }
+
+    fn update_performance_stats(&mut self, stats: PerformanceSnapshot) {
+        // Update or insert the performance stats for this ECU
+        self.performance_stats.insert(stats.ecu_name.clone(), stats);
     }
 
     fn draw(&self, stdout: &mut io::Stdout) -> io::Result<()> {
@@ -394,6 +415,17 @@ impl Dashboard {
         writeln!(stdout, "\r{}", "ACTUATORS (Receiving):".red().bold())?;
         self.draw_actuator_line(stdout, can_ids::BRAKE_COMMAND, "BRAKE_CTRL")?;
         self.draw_actuator_line(stdout, can_ids::STEERING_COMMAND, "STEER_CTRL")?;
+
+        // PERFORMANCE Section (if any stats available)
+        if !self.performance_stats.is_empty() {
+            writeln!(stdout, "\r")?;
+            writeln!(
+                stdout,
+                "\r{}",
+                "PERFORMANCE (HSM Metrics):".yellow().bold()
+            )?;
+            self.draw_performance_stats(stdout)?;
+        }
 
         let _ = execute!(stdout, cursor::Show); // Show cursor if possible
         stdout.flush()?;
@@ -536,6 +568,82 @@ impl Dashboard {
                 "---",
                 "Waiting for data...".bright_black()
             )?;
+        }
+        Ok(())
+    }
+
+    fn draw_performance_stats(&self, stdout: &mut io::Stdout) -> io::Result<()> {
+        // Sort ECUs by name for consistent display
+        let mut ecus: Vec<_> = self.performance_stats.keys().collect();
+        ecus.sort();
+
+        // Draw table header
+        writeln!(
+            stdout,
+            "\r  {:20} {:11} {:11} {:10} {:13} {:30}",
+            "ECU Name".bright_yellow().bold(),
+            "MAC Gen".bright_yellow().bold(),
+            "MAC Verify".bright_yellow().bold(),
+            "CRC Calc".bright_yellow().bold(),
+            "Frame Create".bright_yellow().bold(),
+            "E2E Latency (avg/min/max)".bright_yellow().bold()
+        )?;
+        writeln!(
+            stdout,
+            "\r  {}",
+            "─".repeat(110).bright_black()
+        )?;
+
+        // Draw table rows
+        for ecu_name in ecus {
+            if let Some(stats) = self.performance_stats.get(ecu_name) {
+                // Format each metric with 1 decimal place, or "-" if no data
+                let mac_gen = if stats.mac_gen_count > 0 {
+                    format!("{:.1} μs", stats.mac_gen_avg_us)
+                } else {
+                    "-".to_string()
+                };
+
+                let mac_verify = if stats.mac_verify_count > 0 {
+                    format!("{:.1} μs", stats.mac_verify_avg_us)
+                } else {
+                    "-".to_string()
+                };
+
+                let crc_calc = if stats.crc_calc_count > 0 {
+                    format!("{:.1} μs", stats.crc_calc_avg_us)
+                } else {
+                    "-".to_string()
+                };
+
+                let frame_create = if stats.frame_create_count > 0 {
+                    format!("{:.1} μs", stats.frame_create_avg_us)
+                } else {
+                    "-".to_string()
+                };
+
+                let e2e_latency = if stats.e2e_sample_count > 0 {
+                    format!(
+                        "{:.1}/{:.1}/{:.1} ms",
+                        stats.e2e_latency_avg_us / 1000.0,
+                        stats.e2e_latency_min_us as f64 / 1000.0,
+                        stats.e2e_latency_max_us as f64 / 1000.0
+                    )
+                } else {
+                    "-".to_string()
+                };
+
+                writeln!(
+                    stdout,
+                    "\r  {:20} {:11} {:11} {:10} {:13} {:30}",
+                    ecu_name.cyan(),
+                    mac_gen,
+                    mac_verify,
+                    crc_calc,
+                    frame_create,
+                    e2e_latency
+                )?;
+            }
         }
         Ok(())
     }

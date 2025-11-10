@@ -39,8 +39,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         BUS_ADDRESS.bright_white()
     );
 
-    // Create broadcast channel for secured CAN frames
-    let (tx, _rx) = broadcast::channel::<SecuredCanFrame>(BUFFER_SIZE);
+    // Create broadcast channel for all network messages (frames + performance stats)
+    let (tx, _rx) = broadcast::channel::<NetMessage>(BUFFER_SIZE);
     let tx = Arc::new(tx);
 
     // Create client map
@@ -80,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn handle_client(
     socket: TcpStream,
-    tx: Arc<broadcast::Sender<SecuredCanFrame>>,
+    tx: Arc<broadcast::Sender<NetMessage>>,
     clients: ClientMap,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let peer_addr = socket.peer_addr()?;
@@ -123,16 +123,16 @@ async fn handle_client(
         clients_lock.remove(&client_name).unwrap()
     };
 
-    // Spawn a task to forward secured CAN frames to this client
+    // Spawn a task to forward all network messages to this client
     let client_name_clone = client_name.clone();
     tokio::spawn(async move {
         loop {
             // Handle broadcast receive with lag recovery
-            let secured_frame = match rx.recv().await {
-                Ok(frame) => frame,
+            let msg = match rx.recv().await {
+                Ok(message) => message,
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
                     eprintln!(
-                        "{} Client {} lagged, skipped {} frames (recovering...)",
+                        "{} Client {} lagged, skipped {} messages (recovering...)",
                         "⚠".yellow(),
                         client_name_clone.bright_cyan(),
                         skipped
@@ -147,7 +147,6 @@ async fn handle_client(
             };
 
             // Write directly to this client's writer (NO MUTEX!)
-            let msg = NetMessage::SecuredCanFrame(secured_frame);
             let json = match serde_json::to_string(&msg) {
                 Ok(j) => j,
                 Err(_) => continue,
@@ -190,7 +189,7 @@ async fn handle_client(
                 );
 
                 // Broadcast to all clients
-                if let Err(e) = tx.send(secured_frame) {
+                if let Err(e) = tx.send(NetMessage::SecuredCanFrame(secured_frame)) {
                     eprintln!("{} Failed to broadcast frame: {}", "✗".red(), e);
                 }
             }
@@ -217,12 +216,24 @@ async fn handle_client(
                     session_counter: 0,
                 };
 
-                if let Err(e) = tx.send(secured_frame) {
+                if let Err(e) = tx.send(NetMessage::SecuredCanFrame(secured_frame)) {
                     eprintln!("{} Failed to broadcast frame: {}", "✗".red(), e);
                 }
             }
+            NetMessage::PerformanceStats(stats) => {
+                // Broadcast performance statistics to all clients (especially monitor)
+                println!(
+                    "  {} Performance stats from {}",
+                    "ℹ".bright_blue(),
+                    client_name.bright_cyan()
+                );
+
+                if let Err(e) = tx.send(NetMessage::PerformanceStats(stats)) {
+                    eprintln!("{} Failed to broadcast performance stats: {}", "✗".red(), e);
+                }
+            }
             _ => {
-                // Ignore other message types for now
+                // Ignore other message types (Register, Ack, Error)
             }
         }
     }

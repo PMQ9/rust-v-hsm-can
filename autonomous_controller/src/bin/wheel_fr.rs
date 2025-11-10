@@ -12,6 +12,10 @@ const HSM_SEED: u64 = 0x1002; // Unique seed for this ECU
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Parse command-line arguments
+    let args: Vec<String> = std::env::args().collect();
+    let perf_mode = args.contains(&"--perf".to_string());
+
     println!(
         "{}",
         "═══════════════════════════════════════".green().bold()
@@ -24,11 +28,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         "{}",
         "═══════════════════════════════════════".green().bold()
     );
+    if perf_mode {
+        println!("{} Performance evaluation mode enabled", "ℹ".bright_blue());
+    }
     println!();
 
-    // Initialize HSM
+    // Initialize HSM with optional performance tracking
     println!("{} Initializing Virtual HSM...", "→".cyan());
-    let mut hsm = VirtualHSM::new(ECU_NAME.to_string(), HSM_SEED);
+    let mut hsm = VirtualHSM::with_performance(ECU_NAME.to_string(), HSM_SEED, perf_mode);
 
     // Initialize protected memory
     println!("{} Initializing protected memory...", "→".cyan());
@@ -68,6 +75,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut direction = 1.0f32;
     let mut counter = 0u32;
 
+    // Setup Ctrl+C handler for clean shutdown with performance stats
+    let hsm_clone = hsm.clone();
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to listen for Ctrl+C");
+        println!("\n{} Shutting down...", "→".yellow());
+        hsm_clone.print_performance_stats();
+        std::process::exit(0);
+    });
+
     loop {
         // Simulate wheel speed variation (0-100 rad/s, accelerating and decelerating)
         speed += direction * 0.5;
@@ -100,6 +118,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 "→".bright_black(),
                 actual_speed
             );
+        }
+
+        // Periodically send performance stats to monitor (if enabled)
+        if perf_mode && counter % 100 == 0 && counter > 0 {
+            if let Some(snapshot) = hsm.get_performance_snapshot() {
+                let _ = writer.send_performance_stats(snapshot).await;
+            }
         }
 
         counter += 1;

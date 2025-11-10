@@ -1,3 +1,4 @@
+use colored::*;
 use hmac::{Hmac, Mac};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -5,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 /// Reasons why MAC verification can fail
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +48,134 @@ impl fmt::Display for VerifyError {
     }
 }
 
+/// Performance metrics for HSM operations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerformanceMetrics {
+    /// Total MAC generation operations
+    pub mac_gen_count: u64,
+    /// Total time spent generating MACs (microseconds)
+    pub mac_gen_time_us: u64,
+
+    /// Total MAC verification operations
+    pub mac_verify_count: u64,
+    /// Total time spent verifying MACs (microseconds)
+    pub mac_verify_time_us: u64,
+
+    /// Total CRC calculation operations
+    pub crc_calc_count: u64,
+    /// Total time spent calculating CRCs (microseconds)
+    pub crc_calc_time_us: u64,
+
+    /// Total CRC verification operations
+    pub crc_verify_count: u64,
+    /// Total time spent verifying CRCs (microseconds)
+    pub crc_verify_time_us: u64,
+
+    /// Total frame creation operations
+    pub frame_create_count: u64,
+    /// Total time spent creating secured frames (microseconds)
+    pub frame_create_time_us: u64,
+
+    /// Total frame verification operations
+    pub frame_verify_count: u64,
+    /// Total time spent verifying secured frames (microseconds)
+    pub frame_verify_time_us: u64,
+
+    /// End-to-end latency samples (microseconds)
+    pub e2e_latency_samples: Vec<u64>,
+}
+
+impl PerformanceMetrics {
+    pub fn new() -> Self {
+        Self {
+            mac_gen_count: 0,
+            mac_gen_time_us: 0,
+            mac_verify_count: 0,
+            mac_verify_time_us: 0,
+            crc_calc_count: 0,
+            crc_calc_time_us: 0,
+            crc_verify_count: 0,
+            crc_verify_time_us: 0,
+            frame_create_count: 0,
+            frame_create_time_us: 0,
+            frame_verify_count: 0,
+            frame_verify_time_us: 0,
+            e2e_latency_samples: Vec::new(),
+        }
+    }
+
+    /// Print performance statistics
+    pub fn print_stats(&self, ecu_name: &str) {
+        println!("\n{}", "═══════════════════════════════════════════════════════".bright_blue());
+        println!("{} HSM Performance Statistics for {}", "ℹ".bright_blue(), ecu_name.bright_white().bold());
+        println!("{}", "═══════════════════════════════════════════════════════".bright_blue());
+
+        if self.mac_gen_count > 0 {
+            let avg_mac_gen = self.mac_gen_time_us as f64 / self.mac_gen_count as f64;
+            println!("MAC Generation:    {} ops, avg {:.2} μs/op", self.mac_gen_count, avg_mac_gen);
+        }
+
+        if self.mac_verify_count > 0 {
+            let avg_mac_verify = self.mac_verify_time_us as f64 / self.mac_verify_count as f64;
+            println!("MAC Verification:  {} ops, avg {:.2} μs/op", self.mac_verify_count, avg_mac_verify);
+        }
+
+        if self.crc_calc_count > 0 {
+            let avg_crc_calc = self.crc_calc_time_us as f64 / self.crc_calc_count as f64;
+            println!("CRC Calculation:   {} ops, avg {:.2} μs/op", self.crc_calc_count, avg_crc_calc);
+        }
+
+        if self.crc_verify_count > 0 {
+            let avg_crc_verify = self.crc_verify_time_us as f64 / self.crc_verify_count as f64;
+            println!("CRC Verification:  {} ops, avg {:.2} μs/op", self.crc_verify_count, avg_crc_verify);
+        }
+
+        if self.frame_create_count > 0 {
+            let avg_frame_create = self.frame_create_time_us as f64 / self.frame_create_count as f64;
+            println!("Frame Creation:    {} ops, avg {:.2} μs/op", self.frame_create_count, avg_frame_create);
+        }
+
+        if self.frame_verify_count > 0 {
+            let avg_frame_verify = self.frame_verify_time_us as f64 / self.frame_verify_count as f64;
+            println!("Frame Verification: {} ops, avg {:.2} μs/op", self.frame_verify_count, avg_frame_verify);
+        }
+
+        if !self.e2e_latency_samples.is_empty() {
+            let avg_e2e = self.e2e_latency_samples.iter().sum::<u64>() as f64 / self.e2e_latency_samples.len() as f64;
+            let min_e2e = *self.e2e_latency_samples.iter().min().unwrap_or(&0);
+            let max_e2e = *self.e2e_latency_samples.iter().max().unwrap_or(&0);
+            println!("\nEnd-to-End Latency: {} samples", self.e2e_latency_samples.len());
+            println!("  Average: {:.2} μs ({:.3} ms)", avg_e2e, avg_e2e / 1000.0);
+            println!("  Min:     {} μs ({:.3} ms)", min_e2e, min_e2e as f64 / 1000.0);
+            println!("  Max:     {} μs ({:.3} ms)", max_e2e, max_e2e as f64 / 1000.0);
+        }
+
+        println!("{}", "═══════════════════════════════════════════════════════".bright_blue());
+    }
+}
+
+/// Simplified performance snapshot for network transmission
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerformanceSnapshot {
+    pub ecu_name: String,
+    pub mac_gen_count: u64,
+    pub mac_gen_avg_us: f64,
+    pub mac_verify_count: u64,
+    pub mac_verify_avg_us: f64,
+    pub crc_calc_count: u64,
+    pub crc_calc_avg_us: f64,
+    pub crc_verify_count: u64,
+    pub crc_verify_avg_us: f64,
+    pub frame_create_count: u64,
+    pub frame_create_avg_us: f64,
+    pub frame_verify_count: u64,
+    pub frame_verify_avg_us: f64,
+    pub e2e_latency_avg_us: f64,
+    pub e2e_latency_min_us: u64,
+    pub e2e_latency_max_us: u64,
+    pub e2e_sample_count: u64,
+}
+
 /// Virtual Hardware Security Module
 /// Provides cryptographic key management and operations for secure CAN communication
 #[derive(Clone)]
@@ -81,12 +212,20 @@ pub struct VirtualHSM {
 
     /// Random number generator
     rng: StdRng,
+
+    /// Performance metrics (None if performance tracking disabled)
+    performance_metrics: Option<Arc<Mutex<PerformanceMetrics>>>,
 }
 
 impl VirtualHSM {
     /// Create a new HSM instance with deterministic keys (for testing)
     /// In production, keys would be provisioned during manufacturing
     pub fn new(ecu_id: String, seed: u64) -> Self {
+        Self::with_performance(ecu_id, seed, false)
+    }
+
+    /// Create a new HSM instance with optional performance tracking
+    pub fn with_performance(ecu_id: String, seed: u64, performance_mode: bool) -> Self {
         let rng = StdRng::seed_from_u64(seed);
 
         let mut hsm = Self {
@@ -101,6 +240,11 @@ impl VirtualHSM {
             session_counter: 0,
             ecu_id,
             rng,
+            performance_metrics: if performance_mode {
+                Some(Arc::new(Mutex::new(PerformanceMetrics::new())))
+            } else {
+                None
+            },
         };
 
         // Generate deterministic keys based on seed
@@ -113,6 +257,82 @@ impl VirtualHSM {
         hsm.rng.fill(&mut hsm.seed_key_access);
 
         hsm
+    }
+
+    /// Check if performance tracking is enabled
+    pub fn is_performance_enabled(&self) -> bool {
+        self.performance_metrics.is_some()
+    }
+
+    /// Print performance statistics (if enabled)
+    pub fn print_performance_stats(&self) {
+        if let Some(metrics) = &self.performance_metrics {
+            let metrics = metrics.lock().unwrap();
+            metrics.print_stats(&self.ecu_id);
+        }
+    }
+
+    /// Get a snapshot of performance metrics (if enabled)
+    pub fn get_performance_snapshot(&self) -> Option<PerformanceSnapshot> {
+        if let Some(metrics) = &self.performance_metrics {
+            let m = metrics.lock().unwrap();
+
+            // Calculate summary statistics for e2e latency
+            let (avg_e2e, min_e2e, max_e2e) = if !m.e2e_latency_samples.is_empty() {
+                let avg = m.e2e_latency_samples.iter().sum::<u64>() as f64 / m.e2e_latency_samples.len() as f64;
+                let min = *m.e2e_latency_samples.iter().min().unwrap_or(&0);
+                let max = *m.e2e_latency_samples.iter().max().unwrap_or(&0);
+                (avg, min, max)
+            } else {
+                (0.0, 0, 0)
+            };
+
+            Some(PerformanceSnapshot {
+                ecu_name: self.ecu_id.clone(),
+                mac_gen_count: m.mac_gen_count,
+                mac_gen_avg_us: if m.mac_gen_count > 0 {
+                    m.mac_gen_time_us as f64 / m.mac_gen_count as f64
+                } else {
+                    0.0
+                },
+                mac_verify_count: m.mac_verify_count,
+                mac_verify_avg_us: if m.mac_verify_count > 0 {
+                    m.mac_verify_time_us as f64 / m.mac_verify_count as f64
+                } else {
+                    0.0
+                },
+                crc_calc_count: m.crc_calc_count,
+                crc_calc_avg_us: if m.crc_calc_count > 0 {
+                    m.crc_calc_time_us as f64 / m.crc_calc_count as f64
+                } else {
+                    0.0
+                },
+                crc_verify_count: m.crc_verify_count,
+                crc_verify_avg_us: if m.crc_verify_count > 0 {
+                    m.crc_verify_time_us as f64 / m.crc_verify_count as f64
+                } else {
+                    0.0
+                },
+                frame_create_count: m.frame_create_count,
+                frame_create_avg_us: if m.frame_create_count > 0 {
+                    m.frame_create_time_us as f64 / m.frame_create_count as f64
+                } else {
+                    0.0
+                },
+                frame_verify_count: m.frame_verify_count,
+                frame_verify_avg_us: if m.frame_verify_count > 0 {
+                    m.frame_verify_time_us as f64 / m.frame_verify_count as f64
+                } else {
+                    0.0
+                },
+                e2e_latency_avg_us: avg_e2e,
+                e2e_latency_min_us: min_e2e,
+                e2e_latency_max_us: max_e2e,
+                e2e_sample_count: m.e2e_latency_samples.len() as u64,
+            })
+        } else {
+            None
+        }
     }
 
     /// Add a trusted ECU's MAC verification key
@@ -137,6 +357,12 @@ impl VirtualHSM {
 
     /// Generate Message Authentication Code (MAC) using HMAC-SHA256
     pub fn generate_mac(&self, data: &[u8], session_counter: u64) -> [u8; 32] {
+        let start = if self.performance_metrics.is_some() {
+            Some(Instant::now())
+        } else {
+            None
+        };
+
         let mut mac = Hmac::<Sha256>::new_from_slice(&self.symmetric_comm_key)
             .expect("HMAC can take key of any size");
 
@@ -148,6 +374,15 @@ impl VirtualHSM {
         let bytes = result.into_bytes();
         let mut output = [0u8; 32];
         output.copy_from_slice(&bytes);
+
+        // Record performance metrics
+        if let (Some(start), Some(metrics)) = (start, &self.performance_metrics) {
+            let elapsed = start.elapsed().as_micros() as u64;
+            let mut m = metrics.lock().unwrap();
+            m.mac_gen_count += 1;
+            m.mac_gen_time_us += elapsed;
+        }
+
         output
     }
 
@@ -159,6 +394,12 @@ impl VirtualHSM {
         session_counter: u64,
         source_ecu: &str,
     ) -> Result<(), MacFailureReason> {
+        let start = if self.performance_metrics.is_some() {
+            Some(Instant::now())
+        } else {
+            None
+        };
+
         // Get the MAC key for the source ECU
         let key = match self.mac_verification_keys.get(source_ecu) {
             Some(k) => k,
@@ -174,19 +415,67 @@ impl VirtualHSM {
         expected_mac.update(&session_counter.to_le_bytes());
 
         // Constant-time comparison
-        expected_mac
+        let result = expected_mac
             .verify_slice(mac)
-            .map_err(|_| MacFailureReason::CryptoFailure)
+            .map_err(|_| MacFailureReason::CryptoFailure);
+
+        // Record performance metrics
+        if let (Some(start), Some(metrics)) = (start, &self.performance_metrics) {
+            let elapsed = start.elapsed().as_micros() as u64;
+            let mut m = metrics.lock().unwrap();
+            m.mac_verify_count += 1;
+            m.mac_verify_time_us += elapsed;
+        }
+
+        result
     }
 
     /// Calculate CRC32 checksum
     pub fn calculate_crc(&self, data: &[u8]) -> u32 {
-        crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC).checksum(data)
+        let start = if self.performance_metrics.is_some() {
+            Some(Instant::now())
+        } else {
+            None
+        };
+
+        let crc = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC).checksum(data);
+
+        // Record performance metrics
+        if let (Some(start), Some(metrics)) = (start, &self.performance_metrics) {
+            let elapsed = start.elapsed().as_micros() as u64;
+            let mut m = metrics.lock().unwrap();
+            m.crc_calc_count += 1;
+            m.crc_calc_time_us += elapsed;
+        }
+
+        crc
     }
 
     /// Verify CRC32 checksum
     pub fn verify_crc(&self, data: &[u8], expected_crc: u32) -> bool {
-        self.calculate_crc(data) == expected_crc
+        let start = if self.performance_metrics.is_some() {
+            Some(Instant::now())
+        } else {
+            None
+        };
+
+        let result = self.calculate_crc(data) == expected_crc;
+
+        // Record performance metrics (don't double-count the calculate_crc call)
+        if let (Some(start), Some(metrics)) = (start, &self.performance_metrics) {
+            let elapsed = start.elapsed().as_micros() as u64;
+            let mut m = metrics.lock().unwrap();
+            m.crc_verify_count += 1;
+            // Subtract the time already counted in calculate_crc
+            let crc_time = if m.crc_calc_count > 0 {
+                m.crc_calc_time_us / m.crc_calc_count
+            } else {
+                0
+            };
+            m.crc_verify_time_us += elapsed.saturating_sub(crc_time);
+        }
+
+        result
     }
 
     /// Generate firmware fingerprint (SHA256 hash)
@@ -320,6 +609,12 @@ impl SecuredCanFrame {
         source: String,
         hsm: &mut VirtualHSM,
     ) -> Self {
+        let start = if hsm.is_performance_enabled() {
+            Some(Instant::now())
+        } else {
+            None
+        };
+
         let timestamp = chrono::Utc::now();
         let session_counter = hsm.get_session_counter();
         hsm.increment_session();
@@ -334,6 +629,14 @@ impl SecuredCanFrame {
         let mac = hsm.generate_mac(&mac_data, session_counter);
         let crc = hsm.calculate_crc(&mac_data);
 
+        // Record performance metrics
+        if let (Some(start), Some(metrics)) = (start, &hsm.performance_metrics) {
+            let elapsed = start.elapsed().as_micros() as u64;
+            let mut m = metrics.lock().unwrap();
+            m.frame_create_count += 1;
+            m.frame_create_time_us += elapsed;
+        }
+
         Self {
             can_id,
             data,
@@ -347,6 +650,12 @@ impl SecuredCanFrame {
 
     /// Verify the frame's MAC and CRC
     pub fn verify(&self, hsm: &VirtualHSM) -> Result<(), VerifyError> {
+        let start = if hsm.is_performance_enabled() {
+            Some(Instant::now())
+        } else {
+            None
+        };
+
         // Check if MAC is all zeros - this indicates an unsecured frame
         if self.mac == [0u8; 32] && self.crc == 0 {
             return Err(VerifyError::UnsecuredFrame);
@@ -364,10 +673,30 @@ impl SecuredCanFrame {
         }
 
         // Verify MAC (cryptographic check)
-        hsm.verify_mac(&verify_data, &self.mac, self.session_counter, &self.source)
-            .map_err(|reason| VerifyError::MacMismatch(reason))?;
+        let result = hsm
+            .verify_mac(&verify_data, &self.mac, self.session_counter, &self.source)
+            .map_err(|reason| VerifyError::MacMismatch(reason));
 
-        Ok(())
+        // Record performance metrics (only on success)
+        if result.is_ok() {
+            if let (Some(start), Some(metrics)) = (start, &hsm.performance_metrics) {
+                let elapsed = start.elapsed().as_micros() as u64;
+
+                // Calculate end-to-end latency (from frame timestamp to now)
+                let now = chrono::Utc::now();
+                let e2e_latency_us = (now - self.timestamp)
+                    .num_microseconds()
+                    .unwrap_or(0)
+                    .max(0) as u64;
+
+                let mut m = metrics.lock().unwrap();
+                m.frame_verify_count += 1;
+                m.frame_verify_time_us += elapsed;
+                m.e2e_latency_samples.push(e2e_latency_us);
+            }
+        }
+
+        result
     }
 
     /// Convert to original CanFrame (for compatibility with existing code)

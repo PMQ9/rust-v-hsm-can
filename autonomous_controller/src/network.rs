@@ -1,4 +1,4 @@
-use crate::hsm::SecuredCanFrame;
+use crate::hsm::{PerformanceSnapshot, SecuredCanFrame};
 use crate::types::CanFrame;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -11,6 +11,8 @@ pub enum NetMessage {
     CanFrame(CanFrame),
     /// Secured CAN frame message (with MAC and CRC)
     SecuredCanFrame(SecuredCanFrame),
+    /// Performance statistics snapshot
+    PerformanceStats(PerformanceSnapshot),
     /// Client registration
     Register { client_name: String },
     /// Acknowledgment
@@ -152,5 +154,13 @@ impl BusWriter {
         frame: SecuredCanFrame,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.send_message(&NetMessage::SecuredCanFrame(frame)).await
+    }
+
+    /// Send performance statistics to the bus
+    pub async fn send_performance_stats(
+        &mut self,
+        stats: PerformanceSnapshot,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        self.send_message(&NetMessage::PerformanceStats(stats)).await
     }
 }
