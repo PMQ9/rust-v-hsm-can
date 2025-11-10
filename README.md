@@ -4,7 +4,7 @@ Virtual Hardware Security Module (V-HSM) for CAN Bus security, written in Rust.
 
 **CAN Bus Monitor:**
 
-<img src="utils/docs/CAN_bus_monitor.png" alt="Alt Text" width="100%"/>
+<img src="utils/docs/CAN_bus_monitor_HSM_performance.png" alt="Alt Text" width="100%"/>
 
 This repository contains two CAN bus simulators:
 
@@ -16,7 +16,8 @@ This repository contains two CAN bus simulators:
 ### Option A: Autonomous Vehicle Simulator (with HSM security)
 ```bash
 cd autonomous_controller
-cargo run
+cargo run              # Standard mode
+cargo run -- --perf    # With HSM performance metrics
 # Press 'q' to quit
 ```
 
@@ -193,6 +194,15 @@ rust-v-hsm-can/
 └── README.md              # This file
 ```
 
+## Testing
+
+```bash
+cargo test                                                          # Integration tests
+cargo test --test attack_regression_tests -- --ignored --test-threads=1  # Attack detection tests
+```
+
+See [tests/README.md](tests/README.md) for details.
+
 ## Future Development
 
 - [x] V-HSM cryptographic layer (HMAC-SHA256 + CRC32)
@@ -201,5 +211,7 @@ rust-v-hsm-can/
 - [x] Attack scenario scripts
 - [x] Intrusion detection system
 - [x] Performance benchmarks
+- [x] HSM performance evaluation mode
+- [x] Regression tests with CI/CD integration
 - [ ] CAN FD support
 - [ ] Deploy and test on hardware cluster
