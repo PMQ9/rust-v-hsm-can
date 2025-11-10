@@ -14,6 +14,10 @@ const HSM_SEED: u64 = 0x3002; // Unique seed for this ECU
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Parse command-line arguments
+    let args: Vec<String> = std::env::args().collect();
+    let perf_mode = args.contains(&"--perf".to_string());
+
     println!(
         "{}",
         "═══════════════════════════════════════".magenta().bold()
@@ -26,11 +30,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         "{}",
         "═══════════════════════════════════════".magenta().bold()
     );
+    if perf_mode {
+        println!("{} Performance evaluation mode enabled", "ℹ".bright_blue());
+    }
     println!();
 
-    // Initialize HSM
+    // Initialize HSM with optional performance tracking
     println!("{} Initializing Virtual HSM...", "→".cyan());
-    let mut hsm = VirtualHSM::new(ECU_NAME.to_string(), HSM_SEED);
+    let mut hsm = VirtualHSM::with_performance(ECU_NAME.to_string(), HSM_SEED, perf_mode);
 
     // Register trusted ECU (autonomous controller)
     println!("{} Registering trusted ECUs...", "→".cyan());
@@ -163,6 +170,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
 
     let mut current_steering_angle = 0.0f32;
+
+    // Setup Ctrl+C handler for clean shutdown with performance stats
+    let hsm_perf_clone = hsm.clone();
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to listen for Ctrl+C");
+        println!("\n{} Shutting down...", "→".yellow());
+        hsm_perf_clone.print_performance_stats();
+        std::process::exit(0);
+    });
 
     loop {
         // Process steering commands (secured)
