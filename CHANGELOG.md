@@ -1,5 +1,14 @@
 # Changelog
 
+## 2025-11-10
+
+### HSM Performance Evaluation Mode
+- **Added `--perf` flag**: Enables HSM performance tracking for all ECUs (sensors, controller, actuators)
+- **Metrics tracked**: MAC generation/verification, CRC calculation/verification, frame creation/verification, end-to-end latency (avg/min/max)
+- **Usage**: `cargo run -- --perf` (full simulation with integrated dashboard)
+- **Monitor display**: Compact table format in PERFORMANCE section, updates every 10 seconds
+- **Zero overhead when disabled**: No performance cost without the flag
+
 ## 2025-11-05
 
 ### Threshold-Testing Attack Scenarios
