@@ -2,6 +2,12 @@
 
 ## 2025-11-10
 
+### Regression Test Infrastructure
+- **Fixed `test_short_cycle_injection_does_not_trigger_detection` test**: Added legitimate brake command sender to properly test consecutive error counter reset behavior
+- **Added `test_legitimate_sender` binary**: Impersonates AUTONOMOUS_CTRL to send valid brake commands at 10Hz during tests
+- **Test harness enhancement**: TestHarness now starts legitimate sender alongside brake controller to simulate realistic CAN bus traffic with both valid and malicious frames
+- **Key insight**: Short cycle attacks (2 frames/cycle) only stay below threshold when legitimate frames reset the consecutive error counter between cycles
+
 ### HSM Performance Evaluation Mode
 - **Added `--perf` flag**: Enables HSM performance tracking for all ECUs (sensors, controller, actuators)
 - **Metrics tracked**: MAC generation/verification, CRC calculation/verification, frame creation/verification, end-to-end latency (avg/min/max)

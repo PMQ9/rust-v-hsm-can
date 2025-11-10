@@ -12,6 +12,7 @@ use std::time::Duration;
 struct TestHarness {
     bus_server: Option<Child>,
     brake_controller: Option<Child>,
+    legitimate_sender: Option<Child>,
     brake_output: Arc<Mutex<Vec<String>>>,
 }
 
@@ -20,6 +21,7 @@ impl TestHarness {
         Self {
             bus_server: None,
             brake_controller: None,
+            legitimate_sender: None,
             brake_output: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -78,6 +80,21 @@ impl TestHarness {
         Ok(())
     }
 
+    fn start_legitimate_sender(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        println!("→ Starting legitimate brake command sender...");
+        let child = Command::new("cargo")
+            .args(&["run", "--release", "--bin", "test_legitimate_sender"])
+            .current_dir("autonomous_controller")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+
+        self.legitimate_sender = Some(child);
+        thread::sleep(Duration::from_secs(2));
+        println!("✓ Legitimate sender started");
+        Ok(())
+    }
+
     fn run_attack(&self, attack_name: &str) -> Result<(), Box<dyn std::error::Error>> {
         println!("→ Running attack: {}", attack_name);
 
@@ -124,6 +141,11 @@ impl Drop for TestHarness {
     fn drop(&mut self) {
         println!("→ Cleaning up processes...");
 
+        if let Some(mut child) = self.legitimate_sender.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+
         if let Some(mut child) = self.brake_controller.take() {
             let _ = child.kill();
             let _ = child.wait();
@@ -155,6 +177,9 @@ fn test_short_cycle_injection_does_not_trigger_detection() {
     harness
         .start_brake_controller()
         .expect("Failed to start brake controller");
+    harness
+        .start_legitimate_sender()
+        .expect("Failed to start legitimate sender");
 
     // Run attack
     harness
@@ -207,6 +232,9 @@ fn test_burst_injection_triggers_detection() {
     harness
         .start_brake_controller()
         .expect("Failed to start brake controller");
+    harness
+        .start_legitimate_sender()
+        .expect("Failed to start legitimate sender");
 
     // Run attack
     harness
