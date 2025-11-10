@@ -200,6 +200,6 @@ rust-v-hsm-can/
 - [x] Key management system
 - [x] Attack scenario scripts
 - [x] Intrusion detection system
-- [ ] Performance benchmarks
+- [x] Performance benchmarks
 - [ ] CAN FD support
 - [ ] Deploy and test on hardware cluster
