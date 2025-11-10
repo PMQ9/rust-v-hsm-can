@@ -96,3 +96,8 @@ path = "src/bin/attacks/attack_injection_short_cycles.rs"
 [[bin]]
 name = "attack_injection_burst"
 path = "src/bin/attacks/attack_injection_burst.rs"
+
+# Test helpers
+[[bin]]
+name = "test_legitimate_sender"
+path = "src/bin/test_legitimate_sender.rs"
