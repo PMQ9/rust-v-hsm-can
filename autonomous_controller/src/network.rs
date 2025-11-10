@@ -161,6 +161,7 @@ impl BusWriter {
         &mut self,
         stats: PerformanceSnapshot,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.send_message(&NetMessage::PerformanceStats(stats)).await
+        self.send_message(&NetMessage::PerformanceStats(stats))
+            .await
     }
 }
