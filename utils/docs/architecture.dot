@@ -1,0 +1,39 @@
+digraph CAN_Architecture {
+    // Graph settings
+    rankdir=LR;
+    bgcolor="white";
+    fontname="Helvetica,Arial,sans-serif";
+    node [fontname="Helvetica,Arial,sans-serif", fontsize=12, shape=box, style=filled];
+    edge [fontname="Helvetica,Arial,sans-serif", fontsize=10];
+
+    // Title
+    labelloc="t";
+    label=<<b><font point-size="18">Autonomous Vehicle CAN Bus Architecture</font></b>>;
+
+    // CAN Bus (center)
+    can_bus [label=<<b>CAN BUS</b><br/>V-HSM Secured<br/>HMAC-SHA256>,
+             shape=box, fillcolor="#2ecc71", fontcolor="white", penwidth=4, height=4, width=1.5];
+
+    // Top row: Sensors
+    sensors [label=<<b>SENSORS</b><br/><br/>6 ECUs<br/>Wheels x4<br/>Engine<br/>Steering>,
+             fillcolor="#4a90e2", fontcolor="white", penwidth=2, width=1.5];
+
+    // Middle: Controller
+    controller [label=<<b>AUTONOMOUS<br/>CONTROLLER</b><br/><br/>AI Brain<br/>Attack Detection>,
+                fillcolor="#9b59b6", fontcolor="white", penwidth=2, width=1.5];
+
+    // Bottom row: Actuators
+    actuators [label=<<b>ACTUATORS</b><br/><br/>2 ECUs<br/>Brake<br/>Steering>,
+               fillcolor="#e74c3c", fontcolor="white", penwidth=2, width=1.5];
+
+    // Monitor
+    monitor [label=<<b>MONITOR</b><br/><br/>Dashboard<br/>Security Log>,
+             fillcolor="#95a5a6", fontcolor="white", style="filled,dashed", width=1.5];
+
+    // Data flow arrows
+    sensors -> can_bus [label="  Sensor Data", penwidth=3, color="#27ae60", arrowsize=1.2];
+    can_bus -> controller [label="  Read", penwidth=3, color="#2980b9", arrowsize=1.2];
+    controller -> can_bus [label="  Commands", penwidth=3, color="#8e44ad", arrowsize=1.2];
+    can_bus -> actuators [label="  Execute", penwidth=3, color="#c0392b", arrowsize=1.2];
+    can_bus -> monitor [label="  Observe", style=dashed, penwidth=2, color="#7f8c8d", arrowsize=1.0];
+}

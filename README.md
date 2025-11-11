@@ -53,41 +53,17 @@ All components connect to a shared broadcast bus. Any frame sent by any ECU is r
 
 ### Autonomous Vehicle Project Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        CAN BUS SERVER                           │
-│                      (127.0.0.1:9000)                           │
-└───────────┬─────────────────────────────────────────┬───────────┘
-            │                                         │
-    ┌───────▼────────┐                         ┌──────▼───────┐
-    │  SENSOR LAYER  │                         │ MONITOR      │
-    ├────────────────┤                         │ (Observer)   │
-    │ • 4x Wheel     │                         └──────────────┘
-    │   Speed        │
-    │ • Engine ECU   │
-    │ • Steering     │
-    │   Sensor       │
-    └───────┬────────┘
-            │
-    ┌───────▼────────────┐
-    │  CONTROLLER LAYER  │
-    ├────────────────────┤
-    │ • Autonomous       │
-    │   Controller       │
-    │   (Brain)          │
-    └───────┬────────────┘
-            │
-    ┌───────▼────────┐
-    │ ACTUATOR LAYER │
-    ├────────────────┤
-    │ • Brake        │
-    │   Controller   │
-    │ • Steering     │
-    │   Controller   │
-    └────────────────┘
-```
+<img src="utils/docs/architecture.png" alt="CAN Bus Architecture with V-HSM Security" width="100%"/>
 
 **9 ECUs**: wheel_fl, wheel_fr, wheel_rl, wheel_rr, engine_ecu, steering_sensor, autonomous_controller, brake_controller, steering_controller
+
+**Key Components**:
+- 6 Sensor ECUs sending real-time vehicle data
+- V-HSM Security Layer protecting all communications with HMAC-SHA256 + CRC32
+- CAN Bus Server as central TCP broadcast hub
+- Autonomous Controller processing sensor data and making driving decisions
+- 2 Actuator ECUs receiving control commands
+- Monitor providing real-time dashboard and security status
 
 **Features**:
 - Virtual HSM (Hardware Security Module) with HMAC-SHA256 MAC and CRC32 verification

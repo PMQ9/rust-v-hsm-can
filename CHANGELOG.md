@@ -1,5 +1,11 @@
 # Changelog
 
+## 2025-11-11
+
+### Documentation Enhancements
+- **Added professional architecture diagram**: Created Graphviz-based visual diagram showing CAN bus architecture with V-HSM security layers, all 9 ECUs, and data flow
+- **Generated assets**: PNG (high-res) and SVG (scalable) versions available in `utils/docs/`
+
 ## 2025-11-10
 
 ### Regression Test Infrastructure
