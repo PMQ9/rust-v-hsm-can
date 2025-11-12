@@ -1,5 +1,10 @@
 # Changelog
 
+## 2025-11-12
+
+### Documentation
+- Added ISO 21434 roadmap to README with 4-phase implementation plan
+
 ## 2025-11-11
 
 ### Documentation Enhancements

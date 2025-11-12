@@ -191,3 +191,25 @@ See [tests/README.md](tests/README.md) for details.
 - [x] Regression tests with CI/CD integration
 - [ ] CAN FD support
 - [ ] Deploy and test on hardware cluster
+
+### ISO 21434 Roadmap
+
+**Phase 1 - Foundation:**
+- [ ] Security event logging (tamper-resistant audit trail)
+- [ ] CAN ID access control whitelist (authorization model)
+- [ ] Enhanced replay protection (sliding window + timestamps)
+
+**Phase 2 - Detection:**
+- [ ] Rate limiting and DoS prevention (per-ECU throttling)
+- [ ] Anomaly-based IDS (statistical baseline profiling)
+- [ ] Attack simulation framework (fuzzing, injection, replay)
+
+**Phase 3 - Architecture:**
+- [ ] Security gateway ECU (zone segmentation)
+- [ ] Cryptographic key rotation (session key lifecycle)
+- [ ] Enhanced security dashboard (real-time threat metrics)
+
+**Phase 4 - Advanced:**
+- [ ] UDS secure diagnostics (seed/key authentication)
+- [ ] Signed configuration management (policy tampering detection)
+- [ ] Advanced fail-safe recovery mechanisms
