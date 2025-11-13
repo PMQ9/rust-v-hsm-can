@@ -118,7 +118,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
         }
 
-
         if counter.is_multiple_of(10) {
             println!(
                 "{} Sent wheel speed: {:.2} rad/s",

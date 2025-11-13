@@ -3,8 +3,7 @@
 /// This module defines authorization policies for each ECU in the autonomous vehicle system.
 /// Each ECU has specific CAN IDs it's allowed to transmit and receive, implementing the
 /// principle of least privilege.
-
-use crate::types::{can_ids, CanIdPermissions};
+use crate::types::{CanIdPermissions, can_ids};
 use std::collections::HashMap;
 
 /// Build CAN ID access control policies for all ECUs in the autonomous vehicle system
