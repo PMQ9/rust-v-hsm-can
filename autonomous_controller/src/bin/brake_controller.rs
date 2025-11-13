@@ -2,6 +2,7 @@ use autonomous_vehicle_sim::error_handling::{AttackDetector, ValidationError};
 use autonomous_vehicle_sim::hsm::{SecuredCanFrame, SignedFirmware, VirtualHSM};
 use autonomous_vehicle_sim::network::{BusClient, NetMessage};
 use autonomous_vehicle_sim::protected_memory::ProtectedMemory;
+use autonomous_vehicle_sim::security_log::SecurityLogger;
 use autonomous_vehicle_sim::types::{can_ids, encoding};
 use colored::*;
 use std::sync::{Arc, Mutex};
@@ -66,8 +67,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("{} Listening for secured brake commands...", "→".cyan());
     println!();
 
-    // Initialize attack detector
-    let attack_detector = Arc::new(Mutex::new(AttackDetector::new(ECU_NAME.to_string())));
+    // Initialize security logger
+    println!("{} Initializing security event logger...", "→".cyan());
+    let security_logger = SecurityLogger::new(ECU_NAME.to_string(), None)
+        .expect("Failed to create security logger");
+    println!("   ✓ Logging to: {:?}", security_logger.log_path());
+
+    // Initialize attack detector with security logging
+    let attack_detector = Arc::new(Mutex::new(AttackDetector::with_logger(
+        ECU_NAME.to_string(),
+        security_logger.clone(),
+    )));
     println!("{} Attack detection initialized", "✓".green().bold());
     println!(
         "   • CRC error threshold: {} consecutive errors",
