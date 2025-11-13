@@ -1,5 +1,15 @@
 # Changelog
 
+## 2025-11-13
+
+### CAN ID Access Control (ISO 21434 Compliance)
+- Implemented per-ECU TX/RX whitelists for CAN ID authorization
+- HSM enforces authorization checks before frame creation/verification
+- 9 access control policies defined for all ECUs (wheel sensors, engine, steering, controllers)
+- Unauthorized access triggers immediate fail-safe mode
+- Added 9 unit tests for authorization logic
+- Added 3 regression tests: authorized transmission, unauthorized blocking, full system integration
+
 ## 2025-11-12
 
 ### Security Event Logging (ISO 21434 Compliance)

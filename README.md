@@ -173,8 +173,9 @@ rust-v-hsm-can/
 ## Testing
 
 ```bash
-cargo test                                                          # Integration tests
-cargo test --test attack_regression_tests -- --ignored --test-threads=1  # Attack detection tests
+cargo test                                                                    # Unit tests
+cargo test --test attack_regression_tests -- --ignored --test-threads=1      # Attack detection tests
+cargo test --test access_control_regression_tests -- --ignored --test-threads=1  # Access control tests
 ```
 
 See [tests/README.md](tests/README.md) for details.
@@ -196,7 +197,7 @@ See [tests/README.md](tests/README.md) for details.
 
 **Phase 1 - Foundation:**
 - [x] Security event logging (tamper-resistant audit trail)
-- [ ] CAN ID access control whitelist (authorization model)
+- [x] CAN ID access control whitelist (authorization model)
 - [ ] Enhanced replay protection (sliding window + timestamps)
 
 **Phase 2 - Detection:**
