@@ -51,3 +51,7 @@ jobs:
     - name: Run injection attack regression tests
       run: |
         cargo test --test attack_regression_tests -- --ignored --test-threads=1 --nocapture
+
+    - name: Run access control regression tests
+      run: |
+        cargo test --test access_control_regression_tests -- --ignored --test-threads=1 --nocapture

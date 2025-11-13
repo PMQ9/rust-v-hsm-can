@@ -914,4 +914,181 @@ mod tests {
 
         assert!(firmware.verify(&hsm).is_ok());
     }
+
+    // Access Control Tests
+    #[test]
+    fn test_authorize_transmit_without_policy() {
+        let hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+        // Without a policy loaded, all transmissions should be allowed
+        assert!(hsm.authorize_transmit(0x100).is_ok());
+        assert!(hsm.authorize_transmit(0x200).is_ok());
+        assert!(hsm.authorize_transmit(0x300).is_ok());
+    }
+
+    #[test]
+    fn test_authorize_transmit_with_policy_allowed() {
+        let mut hsm = VirtualHSM::new("WHEEL_FL".to_string(), 12345);
+        let mut perms = crate::types::CanIdPermissions::new("WHEEL_FL".to_string());
+        perms.allow_tx(0x100);
+        perms.allow_tx(0x101);
+        hsm.load_access_control(perms);
+
+        // Should allow authorized CAN IDs
+        assert!(hsm.authorize_transmit(0x100).is_ok());
+        assert!(hsm.authorize_transmit(0x101).is_ok());
+    }
+
+    #[test]
+    fn test_authorize_transmit_with_policy_denied() {
+        let mut hsm = VirtualHSM::new("WHEEL_FL".to_string(), 12345);
+        let mut perms = crate::types::CanIdPermissions::new("WHEEL_FL".to_string());
+        perms.allow_tx(0x100);
+        hsm.load_access_control(perms);
+
+        // Should deny unauthorized CAN IDs
+        assert!(hsm.authorize_transmit(0x200).is_err());
+        assert!(hsm.authorize_transmit(0x300).is_err());
+
+        // Verify error message contains expected information
+        let err = hsm.authorize_transmit(0x200).unwrap_err();
+        assert!(err.contains("WHEEL_FL"));
+        assert!(err.contains("0x200"));
+        assert!(err.contains("not authorized"));
+    }
+
+    #[test]
+    fn test_authorize_receive_without_policy() {
+        let hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+        // Without a policy loaded, all receives should be allowed
+        assert!(hsm.authorize_receive(0x100).is_ok());
+        assert!(hsm.authorize_receive(0x200).is_ok());
+    }
+
+    #[test]
+    fn test_authorize_receive_with_no_rx_whitelist() {
+        let mut hsm = VirtualHSM::new("WHEEL_FL".to_string(), 12345);
+        let mut perms = crate::types::CanIdPermissions::new("WHEEL_FL".to_string());
+        perms.allow_tx(0x100); // Only TX whitelist, no RX whitelist
+        hsm.load_access_control(perms);
+
+        // Should allow all receives when RX whitelist is not set
+        assert!(hsm.authorize_receive(0x100).is_ok());
+        assert!(hsm.authorize_receive(0x200).is_ok());
+        assert!(hsm.authorize_receive(0x300).is_ok());
+    }
+
+    #[test]
+    fn test_authorize_receive_with_rx_whitelist() {
+        let mut hsm = VirtualHSM::new("ENGINE_ECU".to_string(), 12345);
+        let mut perms = crate::types::CanIdPermissions::new("ENGINE_ECU".to_string());
+        perms.allow_tx(0x110);
+        perms.allow_rx(0x301); // Only receive throttle commands
+        hsm.load_access_control(perms);
+
+        // Should allow authorized receives
+        assert!(hsm.authorize_receive(0x301).is_ok());
+
+        // Should deny unauthorized receives
+        assert!(hsm.authorize_receive(0x300).is_err());
+        assert!(hsm.authorize_receive(0x302).is_err());
+    }
+
+    #[test]
+    fn test_secured_frame_creation_with_authorization() {
+        let mut hsm = VirtualHSM::new("WHEEL_FL".to_string(), 12345);
+        let mut perms = crate::types::CanIdPermissions::new("WHEEL_FL".to_string());
+        perms.allow_tx(0x100);
+        hsm.load_access_control(perms);
+
+        // Should create frame for authorized CAN ID
+        let result = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![1, 2, 3, 4],
+            "WHEEL_FL".to_string(),
+            &mut hsm,
+        );
+        assert!(result.is_ok());
+
+        // Should fail for unauthorized CAN ID
+        let result = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x200),
+            vec![1, 2, 3, 4],
+            "WHEEL_FL".to_string(),
+            &mut hsm,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not authorized"));
+    }
+
+    #[test]
+    fn test_secured_frame_verification_with_authorization() {
+        // Create sender with authorization
+        let mut sender_hsm = VirtualHSM::new("WHEEL_FL".to_string(), 12345);
+        let mut sender_perms = crate::types::CanIdPermissions::new("WHEEL_FL".to_string());
+        sender_perms.allow_tx(0x100);
+        sender_hsm.load_access_control(sender_perms);
+
+        // Create receiver with RX whitelist
+        let mut receiver_hsm = VirtualHSM::new("CTRL".to_string(), 67890);
+        let sender_key = *sender_hsm.get_symmetric_key();
+        receiver_hsm.add_trusted_ecu("WHEEL_FL".to_string(), sender_key);
+
+        let mut receiver_perms = crate::types::CanIdPermissions::new("CTRL".to_string());
+        receiver_perms.allow_rx(0x100); // Only receive wheel speed
+        receiver_hsm.load_access_control(receiver_perms);
+
+        // Create authorized frame
+        let frame = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![1, 2, 3, 4],
+            "WHEEL_FL".to_string(),
+            &mut sender_hsm,
+        )
+        .unwrap();
+
+        // Should verify successfully
+        assert!(frame.verify_with_authorization(&receiver_hsm).is_ok());
+
+        // Create frame with unauthorized CAN ID (for receiver)
+        let unauthorized_frame = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![5, 6, 7, 8],
+            "WHEEL_FL".to_string(),
+            &mut sender_hsm,
+        )
+        .unwrap();
+
+        // Manually change the CAN ID to test authorization failure
+        let mut bad_frame = unauthorized_frame.clone();
+        bad_frame.can_id = crate::types::CanId::Standard(0x200);
+
+        // Should fail authorization check
+        let result = bad_frame.verify_with_authorization(&receiver_hsm);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), VerifyError::UnauthorizedAccess);
+    }
+
+    #[test]
+    fn test_multiple_can_ids_in_whitelist() {
+        let mut hsm = VirtualHSM::new("ENGINE_ECU".to_string(), 12345);
+        let mut perms = crate::types::CanIdPermissions::new("ENGINE_ECU".to_string());
+        perms.allow_tx_multiple(&[0x110, 0x111, 0x112]);
+        perms.allow_rx_multiple(&[0x300, 0x301]);
+        hsm.load_access_control(perms);
+
+        // All whitelisted TX IDs should be allowed
+        assert!(hsm.authorize_transmit(0x110).is_ok());
+        assert!(hsm.authorize_transmit(0x111).is_ok());
+        assert!(hsm.authorize_transmit(0x112).is_ok());
+
+        // Non-whitelisted TX IDs should be denied
+        assert!(hsm.authorize_transmit(0x113).is_err());
+
+        // All whitelisted RX IDs should be allowed
+        assert!(hsm.authorize_receive(0x300).is_ok());
+        assert!(hsm.authorize_receive(0x301).is_ok());
+
+        // Non-whitelisted RX IDs should be denied
+        assert!(hsm.authorize_receive(0x302).is_err());
+    }
 }
