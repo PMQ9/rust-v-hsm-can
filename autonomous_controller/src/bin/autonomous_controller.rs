@@ -283,13 +283,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 // Broadcast emergency shutdown status on CAN bus (0x400)
                 // Status byte: 0xFF = Emergency Shutdown
                 let status_data = vec![0xFF];
-                let status_frame = SecuredCanFrame::new(
+                if let Ok(status_frame) = SecuredCanFrame::new(
                     can_ids::AUTO_STATUS,
                     status_data,
                     ECU_NAME.to_string(),
                     &mut hsm,
-                );
-                let _ = writer.send_secured_frame(status_frame).await;
+                ) {
+                    let _ = writer.send_secured_frame(status_frame).await;
+                }
 
                 warning_displayed = true;
             }
@@ -297,13 +298,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             // Periodically re-broadcast shutdown status so monitor always shows it
             if counter.is_multiple_of(10) {
                 let status_data = vec![0xFF]; // 0xFF = Emergency Shutdown
-                let status_frame = SecuredCanFrame::new(
+                if let Ok(status_frame) = SecuredCanFrame::new(
                     can_ids::AUTO_STATUS,
                     status_data,
                     ECU_NAME.to_string(),
                     &mut hsm,
-                );
-                let _ = writer.send_secured_frame(status_frame).await;
+                ) {
+                    let _ = writer.send_secured_frame(status_frame).await;
+                }
             }
 
             // Continue monitoring sensors but DO NOT send control commands
@@ -326,33 +328,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         // Send brake command (secured)
         let brake_data = vec![encoding::encode_brake_pressure(brake_cmd)];
-        let brake_frame = SecuredCanFrame::new(
+        if let Ok(brake_frame) = SecuredCanFrame::new(
             can_ids::BRAKE_COMMAND,
             brake_data,
             ECU_NAME.to_string(),
             &mut hsm,
-        );
-        writer.send_secured_frame(brake_frame).await?;
+        ) {
+            writer.send_secured_frame(brake_frame).await?;
+        }
 
         // Send throttle command (secured)
         let throttle_data = vec![encoding::encode_throttle(throttle_cmd)];
-        let throttle_frame = SecuredCanFrame::new(
+        if let Ok(throttle_frame) = SecuredCanFrame::new(
             can_ids::THROTTLE_COMMAND,
             throttle_data,
             ECU_NAME.to_string(),
             &mut hsm,
-        );
-        writer.send_secured_frame(throttle_frame).await?;
+        ) {
+            writer.send_secured_frame(throttle_frame).await?;
+        }
 
         // Send steering command (secured)
         let steering_data = encoding::encode_steering_angle(steering_cmd);
-        let steering_frame = SecuredCanFrame::new(
+        if let Ok(steering_frame) = SecuredCanFrame::new(
             can_ids::STEERING_COMMAND,
             steering_data.to_vec(),
             ECU_NAME.to_string(),
             &mut hsm,
-        );
-        writer.send_secured_frame(steering_frame).await?;
+        ) {
+            writer.send_secured_frame(steering_frame).await?;
+        }
 
         if counter.is_multiple_of(10) {
             println!(

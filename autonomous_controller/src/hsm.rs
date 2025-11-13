@@ -36,6 +36,8 @@ pub enum VerifyError {
     CrcMismatch,
     /// MAC verification failed - indicates authentication failure
     MacMismatch(MacFailureReason),
+    /// Unauthorized CAN ID access - ECU not permitted to use this CAN ID
+    UnauthorizedAccess,
 }
 
 impl fmt::Display for VerifyError {
@@ -44,6 +46,7 @@ impl fmt::Display for VerifyError {
             VerifyError::UnsecuredFrame => write!(f, "Unsecured frame (no MAC/CRC)"),
             VerifyError::CrcMismatch => write!(f, "CRC verification failed"),
             VerifyError::MacMismatch(reason) => write!(f, "MAC verification failed: {}", reason),
+            VerifyError::UnauthorizedAccess => write!(f, "Unauthorized CAN ID access"),
         }
     }
 }
@@ -246,6 +249,9 @@ pub struct VirtualHSM {
 
     /// Performance metrics (None if performance tracking disabled)
     performance_metrics: Option<Arc<Mutex<PerformanceMetrics>>>,
+
+    /// CAN ID access control permissions
+    can_id_permissions: Option<crate::types::CanIdPermissions>,
 }
 
 impl VirtualHSM {
@@ -276,6 +282,7 @@ impl VirtualHSM {
             } else {
                 None
             },
+            can_id_permissions: None,
         };
 
         // Generate deterministic keys based on seed
@@ -606,6 +613,64 @@ impl VirtualHSM {
     pub fn get_ecu_id(&self) -> &str {
         &self.ecu_id
     }
+
+    /// Load CAN ID access control policy
+    pub fn load_access_control(&mut self, permissions: crate::types::CanIdPermissions) {
+        println!(
+            "{} Loading CAN ID access control for {}",
+            "→".cyan(),
+            permissions.ecu_id
+        );
+        println!(
+            "   • TX whitelist: {} CAN IDs",
+            permissions.tx_whitelist.len()
+        );
+        if let Some(ref rx) = permissions.rx_whitelist {
+            println!("   • RX whitelist: {} CAN IDs", rx.len());
+        } else {
+            println!("   • RX whitelist: ALL (no filtering)");
+        }
+        self.can_id_permissions = Some(permissions);
+    }
+
+    /// Check if this ECU is authorized to transmit on the given CAN ID
+    pub fn authorize_transmit(&self, can_id: u32) -> Result<(), String> {
+        match &self.can_id_permissions {
+            None => Ok(()), // No access control = allow all
+            Some(perms) => {
+                if perms.can_transmit(can_id) {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "ECU {} not authorized to transmit on CAN ID 0x{:03X}",
+                        self.ecu_id, can_id
+                    ))
+                }
+            }
+        }
+    }
+
+    /// Check if this ECU is authorized to receive the given CAN ID
+    pub fn authorize_receive(&self, can_id: u32) -> Result<(), String> {
+        match &self.can_id_permissions {
+            None => Ok(()), // No access control = receive all
+            Some(perms) => {
+                if perms.can_receive(can_id) {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "ECU {} not authorized to receive CAN ID 0x{:03X}",
+                        self.ecu_id, can_id
+                    ))
+                }
+            }
+        }
+    }
+
+    /// Get reference to access control permissions
+    pub fn get_permissions(&self) -> Option<&crate::types::CanIdPermissions> {
+        self.can_id_permissions.as_ref()
+    }
 }
 
 /// Secured CAN frame with MAC and CRC
@@ -634,13 +699,16 @@ pub struct SecuredCanFrame {
 }
 
 impl SecuredCanFrame {
-    /// Create a new secured CAN frame
+    /// Create a new secured CAN frame with authorization check
     pub fn new(
         can_id: crate::types::CanId,
         data: Vec<u8>,
         source: String,
         hsm: &mut VirtualHSM,
-    ) -> Self {
+    ) -> Result<Self, String> {
+        // Check authorization before creating frame
+        hsm.authorize_transmit(can_id.value())?;
+
         let start = if hsm.is_performance_enabled() {
             Some(Instant::now())
         } else {
@@ -669,7 +737,7 @@ impl SecuredCanFrame {
             m.frame_create_time_us += elapsed;
         }
 
-        Self {
+        Ok(Self {
             can_id,
             data,
             source,
@@ -677,7 +745,7 @@ impl SecuredCanFrame {
             mac,
             crc,
             session_counter,
-        }
+        })
     }
 
     /// Verify the frame's MAC and CRC
@@ -729,6 +797,17 @@ impl SecuredCanFrame {
         }
 
         result
+    }
+
+    /// Verify the frame's MAC, CRC, and receive authorization
+    pub fn verify_with_authorization(&self, hsm: &VirtualHSM) -> Result<(), VerifyError> {
+        // First check receive authorization
+        if hsm.authorize_receive(self.can_id.value()).is_err() {
+            return Err(VerifyError::UnauthorizedAccess);
+        }
+
+        // Then perform standard verification
+        self.verify(hsm)
     }
 
     /// Convert to original CanFrame (for compatibility with existing code)

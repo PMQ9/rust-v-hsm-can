@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 /// CAN Frame identifier (11-bit standard or 29-bit extended)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -214,5 +215,75 @@ impl VehicleState {
             let diff = (speed - avg).abs();
             diff / avg > threshold
         })
+    }
+}
+
+/// CAN ID access control permissions for an ECU (ISO 21434 authorization model)
+#[derive(Debug, Clone)]
+pub struct CanIdPermissions {
+    /// ECU identifier
+    pub ecu_id: String,
+
+    /// CAN IDs this ECU is allowed to transmit
+    pub tx_whitelist: HashSet<u32>,
+
+    /// CAN IDs this ECU is allowed to receive (None = receive all)
+    pub rx_whitelist: Option<HashSet<u32>>,
+}
+
+impl CanIdPermissions {
+    pub fn new(ecu_id: String) -> Self {
+        Self {
+            ecu_id,
+            tx_whitelist: HashSet::new(),
+            rx_whitelist: None, // Default: receive all
+        }
+    }
+
+    /// Add a CAN ID to the transmit whitelist
+    pub fn allow_tx(&mut self, can_id: u32) -> &mut Self {
+        self.tx_whitelist.insert(can_id);
+        self
+    }
+
+    /// Add multiple CAN IDs to the transmit whitelist
+    pub fn allow_tx_multiple(&mut self, can_ids: &[u32]) -> &mut Self {
+        for &id in can_ids {
+            self.tx_whitelist.insert(id);
+        }
+        self
+    }
+
+    /// Add a CAN ID to the receive whitelist
+    pub fn allow_rx(&mut self, can_id: u32) -> &mut Self {
+        if self.rx_whitelist.is_none() {
+            self.rx_whitelist = Some(HashSet::new());
+        }
+        self.rx_whitelist.as_mut().unwrap().insert(can_id);
+        self
+    }
+
+    /// Add multiple CAN IDs to the receive whitelist
+    pub fn allow_rx_multiple(&mut self, can_ids: &[u32]) -> &mut Self {
+        if self.rx_whitelist.is_none() {
+            self.rx_whitelist = Some(HashSet::new());
+        }
+        for &id in can_ids {
+            self.rx_whitelist.as_mut().unwrap().insert(id);
+        }
+        self
+    }
+
+    /// Check if ECU is authorized to transmit on this CAN ID
+    pub fn can_transmit(&self, can_id: u32) -> bool {
+        self.tx_whitelist.contains(&can_id)
+    }
+
+    /// Check if ECU is authorized to receive this CAN ID
+    pub fn can_receive(&self, can_id: u32) -> bool {
+        match &self.rx_whitelist {
+            None => true, // No RX filtering = receive all
+            Some(whitelist) => whitelist.contains(&can_id),
+        }
     }
 }

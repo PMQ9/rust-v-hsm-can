@@ -103,14 +103,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         // Encode and send with HSM security
         let data = encoding::encode_wheel_speed(actual_speed);
-        let secured_frame = SecuredCanFrame::new(
+        match SecuredCanFrame::new(
             can_ids::WHEEL_SPEED_FR,
             data.to_vec(),
             ECU_NAME.to_string(),
             &mut hsm,
-        );
-
-        writer.send_secured_frame(secured_frame).await?;
+        ) {
+            Ok(secured_frame) => {
+                writer.send_secured_frame(secured_frame).await?;
+            }
+            Err(e) => {
+                eprintln!("{} Failed to create secured frame: {}", "✗".red().bold(), e);
+                continue;
+            }
+        }
 
         if counter.is_multiple_of(10) {
             println!(

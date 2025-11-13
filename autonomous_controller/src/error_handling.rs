@@ -18,6 +18,7 @@ pub enum ValidationError {
     CrcMismatch,
     MacMismatch,
     UnsecuredFrame,
+    UnauthorizedAccess,
 }
 
 impl ValidationError {
@@ -27,6 +28,7 @@ impl ValidationError {
             crate::hsm::VerifyError::UnsecuredFrame => ValidationError::UnsecuredFrame,
             crate::hsm::VerifyError::CrcMismatch => ValidationError::CrcMismatch,
             crate::hsm::VerifyError::MacMismatch(_) => ValidationError::MacMismatch,
+            crate::hsm::VerifyError::UnauthorizedAccess => ValidationError::UnauthorizedAccess,
         }
     }
 }
@@ -37,6 +39,7 @@ impl fmt::Display for ValidationError {
             ValidationError::CrcMismatch => write!(f, "CRC Mismatch"),
             ValidationError::MacMismatch => write!(f, "MAC Mismatch"),
             ValidationError::UnsecuredFrame => write!(f, "Unsecured Frame (No MAC)"),
+            ValidationError::UnauthorizedAccess => write!(f, "Unauthorized CAN ID Access"),
         }
     }
 }
@@ -79,6 +82,8 @@ pub struct AttackDetector {
     total_mac_errors: u64,
     /// Total unsecured frames encountered
     total_unsecured_frames: u64,
+    /// Total unauthorized access attempts
+    total_unauthorized_access: u64,
     /// Total frames successfully validated
     total_valid_frames: u64,
     /// Current security state
@@ -98,6 +103,7 @@ impl AttackDetector {
             total_crc_errors: 0,
             total_mac_errors: 0,
             total_unsecured_frames: 0,
+            total_unauthorized_access: 0,
             total_valid_frames: 0,
             state: SecurityState::Normal,
             security_logger: None,
@@ -117,6 +123,7 @@ impl AttackDetector {
             total_crc_errors: 0,
             total_mac_errors: 0,
             total_unsecured_frames: 0,
+            total_unauthorized_access: 0,
             total_valid_frames: 0,
             state: SecurityState::Normal,
             security_logger: Some(logger),
@@ -257,6 +264,12 @@ impl AttackDetector {
                     return false; // Reject frame
                 }
             }
+            ValidationError::UnauthorizedAccess => {
+                // Unauthorized access is handled separately via handle_unauthorized_access()
+                // This case shouldn't normally be reached via record_error
+                self.total_unauthorized_access += 1;
+                return false; // Always reject unauthorized access
+            }
         }
 
         // Allow recovery for errors below threshold
@@ -325,6 +338,12 @@ impl AttackDetector {
                     self.total_unsecured_frames,
                     UNSECURED_FRAME_THRESHOLD,
                 ),
+                ValidationError::UnauthorizedAccess => (
+                    "UNAUTHORIZED_ACCESS".to_string(),
+                    1, // Always immediate
+                    self.total_unauthorized_access,
+                    1, // Immediate threshold
+                ),
             };
 
             logger.log_attack_detected(attack_type, consecutive_errors, total_errors, threshold);
@@ -388,6 +407,22 @@ impl AttackDetector {
                 println!("   • Attacker is sending frames without valid MAC");
                 println!("   • This indicates unauthorized ECU on the bus");
             }
+            ValidationError::UnauthorizedAccess => {
+                println!(
+                    "{} Unauthorized access attempts: {}",
+                    "→".red(),
+                    self.total_unauthorized_access
+                );
+                println!();
+                println!(
+                    "{} {}",
+                    "→".red(),
+                    "ATTACK TYPE: Authorization Violation".red().bold()
+                );
+                println!("   • ECU attempting to use unauthorized CAN ID");
+                println!("   • This indicates compromised or rogue ECU");
+                println!("   • Access control whitelist violated");
+            }
         }
 
         println!();
@@ -424,6 +459,7 @@ impl AttackDetector {
             total_crc_errors: self.total_crc_errors,
             total_mac_errors: self.total_mac_errors,
             total_unsecured_frames: self.total_unsecured_frames,
+            total_unauthorized_access: self.total_unauthorized_access,
             total_valid_frames: self.total_valid_frames,
             state: self.state,
         }
@@ -453,6 +489,89 @@ impl AttackDetector {
         self.unsecured_frame_count = 0;
         self.state = SecurityState::Normal;
     }
+
+    /// Handle unauthorized CAN ID access attempt
+    pub fn handle_unauthorized_access(&mut self, frame: &crate::hsm::SecuredCanFrame) {
+        self.total_unauthorized_access += 1;
+
+        println!(
+            "{} {} from {} on CAN ID 0x{:03X}",
+            "⚠️".yellow(),
+            "UNAUTHORIZED CAN ID ACCESS".red().bold(),
+            frame.source.bright_black(),
+            frame.can_id.value()
+        );
+
+        // Log to security event logger
+        if let Some(ref logger) = self.security_logger {
+            logger.log_event(crate::security_log::SecurityEvent::FrameRejected {
+                source: frame.source.clone(),
+                can_id: frame.can_id.value(),
+                reason: "Unauthorized CAN ID access".to_string(),
+            });
+        }
+
+        // Unauthorized access triggers immediate state change to UnderAttack
+        let old_state = self.state;
+        self.state = SecurityState::UnderAttack;
+
+        if old_state != self.state {
+            println!();
+            println!("{}", "═══════════════════════════════════════".red().bold());
+            println!("{}", "       ATTACK DETECTED             ".red().bold());
+            println!("{}", "═══════════════════════════════════════".red().bold());
+            println!();
+            println!("{} ECU: {}", "→".red(), self.ecu_name.yellow().bold());
+            println!(
+                "{} Error Type: {}",
+                "→".red(),
+                "Unauthorized CAN ID Access".red().bold()
+            );
+            println!(
+                "{} Unauthorized attempts: {}",
+                "→".red(),
+                self.total_unauthorized_access
+            );
+            println!();
+            println!(
+                "{} {}",
+                "→".red(),
+                "ATTACK TYPE: Authorization Violation".red().bold()
+            );
+            println!("   • ECU attempting to use unauthorized CAN ID");
+            println!("   • This indicates compromised or rogue ECU");
+            println!("   • Access control whitelist violated");
+            println!();
+            println!(
+                "{} {}",
+                "→".red(),
+                "PROTECTIVE MEASURES ACTIVATED:".yellow().bold()
+            );
+            println!("   • Rejecting all unauthorized frames");
+            println!("   • Entering fail-safe mode");
+            println!("   • Logging violation details");
+            println!();
+            println!("{}", "═══════════════════════════════════════".red().bold());
+            println!();
+
+            // Log state change
+            if let Some(ref logger) = self.security_logger {
+                logger.log_state_change(
+                    format!("{:?}", old_state),
+                    format!("{:?}", self.state),
+                    "Unauthorized CAN ID access detected".to_string(),
+                );
+                logger.log_fail_safe_activated(
+                    "Unauthorized access - entering fail-safe mode".to_string(),
+                );
+            }
+        }
+    }
+
+    /// Get total unauthorized access attempts
+    pub fn get_unauthorized_count(&self) -> u64 {
+        self.total_unauthorized_access
+    }
 }
 
 /// Statistics for attack detector
@@ -464,6 +583,7 @@ pub struct AttackDetectorStats {
     pub total_crc_errors: u64,
     pub total_mac_errors: u64,
     pub total_unsecured_frames: u64,
+    pub total_unauthorized_access: u64,
     pub total_valid_frames: u64,
     pub state: SecurityState,
 }

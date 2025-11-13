@@ -1,3 +1,4 @@
+use autonomous_vehicle_sim::access_control;
 use autonomous_vehicle_sim::hsm::{SecuredCanFrame, SignedFirmware, VirtualHSM};
 use autonomous_vehicle_sim::network::BusClient;
 use autonomous_vehicle_sim::protected_memory::ProtectedMemory;
@@ -36,6 +37,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Initialize HSM with optional performance tracking
     println!("{} Initializing Virtual HSM...", "→".cyan());
     let mut hsm = VirtualHSM::with_performance(ECU_NAME.to_string(), HSM_SEED, perf_mode);
+
+    // Load CAN ID access control policy
+    println!("{} Loading CAN ID access control policy...", "→".cyan());
+    if let Some(permissions) = access_control::load_policy_for_ecu(ECU_NAME) {
+        hsm.load_access_control(permissions);
+        println!("{} Access control policy loaded", "✓".green().bold());
+    } else {
+        println!(
+            "{} No access control policy found - using permissive mode",
+            "⚠".yellow()
+        );
+    }
+    println!();
 
     // Initialize protected memory
     println!("{} Initializing protected memory...", "→".cyan());
@@ -103,14 +117,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         // Encode and send with HSM security
         let data = encoding::encode_wheel_speed(actual_speed);
-        let secured_frame = SecuredCanFrame::new(
+        match SecuredCanFrame::new(
             can_ids::WHEEL_SPEED_FL,
             data.to_vec(),
             ECU_NAME.to_string(),
             &mut hsm,
-        );
-
-        writer.send_secured_frame(secured_frame).await?;
+        ) {
+            Ok(secured_frame) => {
+                writer.send_secured_frame(secured_frame).await?;
+            }
+            Err(e) => {
+                eprintln!("{} Failed to create secured frame: {}", "✗".red().bold(), e);
+                // Authorization failed - this shouldn't happen in normal operation
+                continue;
+            }
+        }
 
         if counter.is_multiple_of(10) {
             println!(

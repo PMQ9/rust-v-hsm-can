@@ -40,14 +40,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let brake_pressure = 30.0f32; // 30% brake pressure
         let brake_data = vec![encoding::encode_brake_pressure(brake_pressure)];
 
-        let secured_frame = SecuredCanFrame::new(
+        if let Ok(secured_frame) = SecuredCanFrame::new(
             can_ids::BRAKE_COMMAND,
             brake_data,
             SENDER_NAME.to_string(),
             &mut hsm,
-        );
-
-        writer.send_secured_frame(secured_frame).await?;
+        ) {
+            writer.send_secured_frame(secured_frame).await?;
+        } else {
+            eprintln!("Failed to create secured frame");
+            continue;
+        }
         frame_count += 1;
 
         tokio::time::sleep(Duration::from_millis(SEND_INTERVAL_MS)).await;
