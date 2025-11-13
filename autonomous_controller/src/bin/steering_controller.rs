@@ -78,8 +78,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Initialize security logger
     println!("{} Initializing security event logger...", "→".cyan());
-    let security_logger = SecurityLogger::new(ECU_NAME.to_string(), None)
-        .expect("Failed to create security logger");
+    let security_logger =
+        SecurityLogger::new(ECU_NAME.to_string(), None).expect("Failed to create security logger");
     println!("   ✓ Logging to: {:?}", security_logger.log_path());
 
     // Initialize attack detector with security logging

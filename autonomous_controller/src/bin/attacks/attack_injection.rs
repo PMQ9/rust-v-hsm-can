@@ -60,7 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         writer.send_frame(malicious_frame).await?;
 
-        if counter % 10 == 0 {
+        if counter.is_multiple_of(10) {
             println!(
                 "{} Injected fake wheel speed: {:.2} rad/s (Source: {})",
                 "⚡".red(),

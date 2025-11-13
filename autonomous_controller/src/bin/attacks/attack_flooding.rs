@@ -68,7 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         counter += 1;
 
         // Status update every second
-        if counter % FRAMES_PER_SECOND == 0 {
+        if counter.is_multiple_of(FRAMES_PER_SECOND) {
             let elapsed = start_time.elapsed().as_secs();
             let rate = counter as f64 / elapsed as f64;
             println!(

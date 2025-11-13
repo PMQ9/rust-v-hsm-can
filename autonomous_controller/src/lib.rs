@@ -13,5 +13,5 @@ pub use error_handling::{AttackDetector, SecurityState, ValidationError};
 pub use hsm::{SecuredCanFrame, SignedFirmware, VirtualHSM};
 pub use network::{BusClient, BusReader, BusWriter, NetMessage};
 pub use protected_memory::{FirmwareInfo, ProtectedMemory};
-pub use security_log::{SecurityLogger, SecurityEvent};
+pub use security_log::{SecurityEvent, SecurityLogger};
 pub use types::{ArmVariant, CanFrame, CanId, EcuConfig, VehicleState};

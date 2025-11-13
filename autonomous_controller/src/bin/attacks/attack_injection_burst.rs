@@ -96,7 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             // Calculate CORRECT CRC (so CRC check passes and MAC check fails)
             let mut crc_data = Vec::new();
-            crc_data.extend_from_slice(&(can_ids::BRAKE_COMMAND.value() as u32).to_le_bytes());
+            crc_data.extend_from_slice(&can_ids::BRAKE_COMMAND.value().to_le_bytes());
             crc_data.extend_from_slice(&data);
             crc_data.extend_from_slice(ATTACKER_NAME.as_bytes());
             let valid_crc = hsm.calculate_crc(&crc_data);

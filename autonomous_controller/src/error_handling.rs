@@ -161,7 +161,10 @@ impl AttackDetector {
                         logger.log_state_change(
                             format!("{:?}", old_state),
                             format!("{:?}", self.state),
-                            format!("CRC errors approaching threshold ({}/{})", self.crc_error_count, CRC_ERROR_THRESHOLD),
+                            format!(
+                                "CRC errors approaching threshold ({}/{})",
+                                self.crc_error_count, CRC_ERROR_THRESHOLD
+                            ),
                         );
                     }
 
@@ -209,7 +212,10 @@ impl AttackDetector {
                         logger.log_state_change(
                             format!("{:?}", old_state),
                             format!("{:?}", self.state),
-                            format!("MAC errors approaching threshold ({}/{})", self.mac_error_count, MAC_ERROR_THRESHOLD),
+                            format!(
+                                "MAC errors approaching threshold ({}/{})",
+                                self.mac_error_count, MAC_ERROR_THRESHOLD
+                            ),
                         );
                     }
 
