@@ -180,15 +180,15 @@ fn test_authorized_can_id_transmission() {
     }
 
     assert!(
-        harness.check_output_contains("Access control policy loaded") ||
-        harness.check_output_contains("TX whitelist"),
+        harness.check_output_contains("Access control policy loaded")
+            || harness.check_output_contains("TX whitelist"),
         "Access control policy should be loaded"
     );
 
     assert!(
-        harness.check_output_contains("Sent wheel speed") ||
-        harness.check_output_contains("wheel speed") ||
-        harness.check_output_contains("Sent"),
+        harness.check_output_contains("Sent wheel speed")
+            || harness.check_output_contains("wheel speed")
+            || harness.check_output_contains("Sent"),
         "Wheel ECU should successfully send wheel speed messages"
     );
 
@@ -319,12 +319,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Run the malicious ECU test
     println!("→ Running unauthorized transmission test...");
     let output = Command::new("cargo")
-        .args(&[
-            "run",
-            "--release",
-            "--bin",
-            "test_access_control_attacker",
-        ])
+        .args(&["run", "--release", "--bin", "test_access_control_attacker"])
         .current_dir("autonomous_controller")
         .output()
         .expect("Failed to run test attacker");
@@ -347,14 +342,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Verify that unauthorized transmissions were blocked
     assert!(
-        stdout.contains("Unauthorized transmission blocked")
-            && stdout.contains("BRAKE_COMMAND"),
+        stdout.contains("Unauthorized transmission blocked") && stdout.contains("BRAKE_COMMAND"),
         "Unauthorized BRAKE_COMMAND should be blocked"
     );
 
     assert!(
-        stdout.contains("Unauthorized transmission blocked")
-            && stdout.contains("STEERING_COMMAND"),
+        stdout.contains("Unauthorized transmission blocked") && stdout.contains("STEERING_COMMAND"),
         "Unauthorized STEERING_COMMAND should be blocked"
     );
 
@@ -365,9 +358,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     );
 
     // Clean up test file
-    let _ = std::fs::remove_file(
-        "autonomous_controller/src/bin/test_access_control_attacker.rs",
-    );
+    let _ = std::fs::remove_file("autonomous_controller/src/bin/test_access_control_attacker.rs");
 
     println!("✓ Test passed: Unauthorized transmissions are blocked");
 }
