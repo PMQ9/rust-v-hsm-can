@@ -104,23 +104,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         // Send RPM (secured)
         let rpm_data = encoding::encode_rpm(rpm);
-        let rpm_frame = SecuredCanFrame::new(
+        if let Ok(rpm_frame) = SecuredCanFrame::new(
             can_ids::ENGINE_RPM,
             rpm_data.to_vec(),
             ECU_NAME.to_string(),
             &mut hsm,
-        );
-        writer.send_secured_frame(rpm_frame).await?;
+        ) {
+            writer.send_secured_frame(rpm_frame).await?;
+        } else {
+            eprintln!("{} Failed to create RPM frame", "✗".red().bold());
+            continue;
+        }
 
         // Send throttle position (secured)
         let throttle_data = vec![encoding::encode_throttle(throttle)];
-        let throttle_frame = SecuredCanFrame::new(
+        if let Ok(throttle_frame) = SecuredCanFrame::new(
             can_ids::ENGINE_THROTTLE,
             throttle_data,
             ECU_NAME.to_string(),
             &mut hsm,
-        );
-        writer.send_secured_frame(throttle_frame).await?;
+        ) {
+            writer.send_secured_frame(throttle_frame).await?;
+        } else {
+            eprintln!("{} Failed to create throttle frame", "✗".red().bold());
+            continue;
+        }
 
         if counter.is_multiple_of(20) {
             println!(

@@ -68,6 +68,27 @@ pub enum SecurityEvent {
         mac_errors: u64,
         unsecured_frames: u64,
     },
+
+    /// Unauthorized CAN ID transmission attempt
+    UnauthorizedTransmit {
+        source: String,
+        can_id: u32,
+        attempted_action: String,
+    },
+
+    /// Unauthorized CAN ID receive attempt
+    UnauthorizedReceive {
+        source: String,
+        can_id: u32,
+        blocked: bool,
+    },
+
+    /// Access control policy loaded
+    AccessControlLoaded {
+        ecu_id: String,
+        tx_whitelist_size: usize,
+        rx_whitelist_size: Option<usize>,
+    },
 }
 
 /// A single entry in the security log with tamper-resistant chaining

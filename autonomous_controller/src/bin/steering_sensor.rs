@@ -103,23 +103,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         // Send steering angle (secured)
         let angle_data = encoding::encode_steering_angle(angle);
-        let angle_frame = SecuredCanFrame::new(
+        if let Ok(angle_frame) = SecuredCanFrame::new(
             can_ids::STEERING_ANGLE,
             angle_data.to_vec(),
             ECU_NAME.to_string(),
             &mut hsm,
-        );
-        writer.send_secured_frame(angle_frame).await?;
+        ) {
+            writer.send_secured_frame(angle_frame).await?;
+        } else {
+            eprintln!("{} Failed to create angle frame", "✗".red().bold());
+            continue;
+        }
 
         // Send steering torque (secured)
         let torque_data = encoding::encode_steering_torque(torque);
-        let torque_frame = SecuredCanFrame::new(
+        if let Ok(torque_frame) = SecuredCanFrame::new(
             can_ids::STEERING_TORQUE,
             torque_data.to_vec(),
             ECU_NAME.to_string(),
             &mut hsm,
-        );
-        writer.send_secured_frame(torque_frame).await?;
+        ) {
+            writer.send_secured_frame(torque_frame).await?;
+        } else {
+            eprintln!("{} Failed to create torque frame", "✗".red().bold());
+            continue;
+        }
 
         if counter.is_multiple_of(20) {
             println!(

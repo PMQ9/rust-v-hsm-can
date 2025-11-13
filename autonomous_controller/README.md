@@ -303,11 +303,20 @@ Each ECU performs secure boot on startup:
 3. Verify HMAC signature using Secure Boot Key
 4. If valid, execute firmware; if invalid, halt
 
+### CAN ID Access Control (ISO 21434)
+
+Each ECU has a whitelist defining which CAN IDs it can transmit/receive. HSM enforces authorization before creating or accepting frames.
+
+**Policy enforcement**: TX whitelist (mandatory), RX whitelist (optional filtering)
+**Example**: WHEEL_FL can only transmit on 0x100, ENGINE_ECU only on 0x110-0x111
+
+Unauthorized access attempts trigger immediate fail-safe mode and security logging.
+
 ### Security Event Logging (ISO 21434)
 
 All ECUs maintain tamper-resistant security logs using chained SHA256 hashing. Each entry includes the hash of the previous entry, making tampering detectable.
 
-**Logged events**: System startup, verification failures, state changes, attacks, frame rejections, fail-safe activations
+**Logged events**: System startup, verification failures, state changes, attacks, frame rejections, fail-safe activations, unauthorized access attempts
 
 **Analyze logs**:
 ```bash
