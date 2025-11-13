@@ -3,6 +3,7 @@
 /// This module provides attack detection capabilities by tracking CRC and MAC
 /// validation failures. It implements tolerance for occasional errors (signal
 /// degradation, noise) while detecting sustained attack patterns.
+use crate::security_log::SecurityLogger;
 use colored::*;
 use std::fmt;
 
@@ -82,10 +83,12 @@ pub struct AttackDetector {
     total_valid_frames: u64,
     /// Current security state
     state: SecurityState,
+    /// Security event logger (optional)
+    security_logger: Option<SecurityLogger>,
 }
 
 impl AttackDetector {
-    /// Create a new attack detector
+    /// Create a new attack detector without security logging
     pub fn new(ecu_name: String) -> Self {
         Self {
             ecu_name,
@@ -97,6 +100,26 @@ impl AttackDetector {
             total_unsecured_frames: 0,
             total_valid_frames: 0,
             state: SecurityState::Normal,
+            security_logger: None,
+        }
+    }
+
+    /// Create a new attack detector with security logging
+    pub fn with_logger(ecu_name: String, logger: SecurityLogger) -> Self {
+        // Log system startup
+        logger.log_startup(true);
+
+        Self {
+            ecu_name,
+            crc_error_count: 0,
+            mac_error_count: 0,
+            unsecured_frame_count: 0,
+            total_crc_errors: 0,
+            total_mac_errors: 0,
+            total_unsecured_frames: 0,
+            total_valid_frames: 0,
+            state: SecurityState::Normal,
+            security_logger: Some(logger),
         }
     }
 
@@ -116,11 +139,32 @@ impl AttackDetector {
                     self.total_crc_errors
                 );
 
+                // Log verification failure
+                if let Some(logger) = &self.security_logger {
+                    logger.log_verification_failure(
+                        source.to_string(),
+                        0, // CAN ID not available here
+                        "CRC_MISMATCH".to_string(),
+                        self.crc_error_count,
+                    );
+                }
+
                 if self.crc_error_count >= CRC_ERROR_THRESHOLD {
                     self.trigger_attack_mode(ValidationError::CrcMismatch);
                     return false; // Reject frame
                 } else if self.crc_error_count >= CRC_ERROR_THRESHOLD / 2 {
+                    let old_state = self.state;
                     self.state = SecurityState::Warning;
+
+                    // Log state change
+                    if let Some(logger) = &self.security_logger {
+                        logger.log_state_change(
+                            format!("{:?}", old_state),
+                            format!("{:?}", self.state),
+                            format!("CRC errors approaching threshold ({}/{})", self.crc_error_count, CRC_ERROR_THRESHOLD),
+                        );
+                    }
+
                     println!(
                         "{} {} - CRC errors approaching threshold ({}/{})",
                         "⚠️".yellow(),
@@ -143,11 +187,32 @@ impl AttackDetector {
                     self.total_mac_errors
                 );
 
+                // Log verification failure
+                if let Some(logger) = &self.security_logger {
+                    logger.log_verification_failure(
+                        source.to_string(),
+                        0, // CAN ID not available here
+                        "MAC_MISMATCH".to_string(),
+                        self.mac_error_count,
+                    );
+                }
+
                 if self.mac_error_count >= MAC_ERROR_THRESHOLD {
                     self.trigger_attack_mode(ValidationError::MacMismatch);
                     return false; // Reject frame
                 } else if self.mac_error_count >= MAC_ERROR_THRESHOLD / 2 {
+                    let old_state = self.state;
                     self.state = SecurityState::Warning;
+
+                    // Log state change
+                    if let Some(logger) = &self.security_logger {
+                        logger.log_state_change(
+                            format!("{:?}", old_state),
+                            format!("{:?}", self.state),
+                            format!("MAC errors approaching threshold ({}/{})", self.mac_error_count, MAC_ERROR_THRESHOLD),
+                        );
+                    }
+
                     println!(
                         "{} {} - MAC errors approaching threshold ({}/{})",
                         "⚠️".yellow(),
@@ -169,6 +234,16 @@ impl AttackDetector {
                     self.unsecured_frame_count,
                     self.total_unsecured_frames
                 );
+
+                // Log verification failure
+                if let Some(logger) = &self.security_logger {
+                    logger.log_verification_failure(
+                        source.to_string(),
+                        0, // CAN ID not available here
+                        "UNSECURED_FRAME".to_string(),
+                        self.unsecured_frame_count,
+                    );
+                }
 
                 // Unsecured frames are IMMEDIATE attack indicators - trigger immediately
                 if self.unsecured_frame_count >= UNSECURED_FRAME_THRESHOLD {
@@ -201,8 +276,18 @@ impl AttackDetector {
         self.unsecured_frame_count = 0;
 
         // Return to normal if we were in warning state
+        let old_state = self.state;
         if self.state == SecurityState::Warning {
             self.state = SecurityState::Normal;
+
+            // Log state change
+            if let Some(logger) = &self.security_logger {
+                logger.log_state_change(
+                    format!("{:?}", old_state),
+                    format!("{:?}", self.state),
+                    "Successful frame validation".to_string(),
+                );
+            }
         }
 
         self.total_valid_frames += 1;
@@ -210,7 +295,40 @@ impl AttackDetector {
 
     /// Trigger attack mode when threshold is exceeded
     fn trigger_attack_mode(&mut self, error_type: ValidationError) {
+        let old_state = self.state;
         self.state = SecurityState::UnderAttack;
+
+        // Log attack detection
+        if let Some(logger) = &self.security_logger {
+            let (attack_type, consecutive_errors, total_errors, threshold) = match error_type {
+                ValidationError::CrcMismatch => (
+                    "CRC_MISMATCH".to_string(),
+                    self.crc_error_count,
+                    self.total_crc_errors,
+                    CRC_ERROR_THRESHOLD,
+                ),
+                ValidationError::MacMismatch => (
+                    "MAC_MISMATCH".to_string(),
+                    self.mac_error_count,
+                    self.total_mac_errors,
+                    MAC_ERROR_THRESHOLD,
+                ),
+                ValidationError::UnsecuredFrame => (
+                    "UNSECURED_FRAME_INJECTION".to_string(),
+                    self.unsecured_frame_count,
+                    self.total_unsecured_frames,
+                    UNSECURED_FRAME_THRESHOLD,
+                ),
+            };
+
+            logger.log_attack_detected(attack_type, consecutive_errors, total_errors, threshold);
+            logger.log_state_change(
+                format!("{:?}", old_state),
+                format!("{:?}", self.state),
+                "Attack threshold exceeded".to_string(),
+            );
+            logger.log_fail_safe_activated("Attack detected - entering fail-safe mode".to_string());
+        }
 
         println!();
         println!("{}", "═══════════════════════════════════════".red().bold());
@@ -312,6 +430,17 @@ impl AttackDetector {
             "→".cyan(),
             "RESET".cyan().bold()
         );
+
+        // Log security reset
+        if let Some(logger) = &self.security_logger {
+            logger.log_security_reset("Manual reset".to_string());
+            logger.log_statistics(
+                self.total_valid_frames,
+                self.total_crc_errors,
+                self.total_mac_errors,
+                self.total_unsecured_frames,
+            );
+        }
 
         self.crc_error_count = 0;
         self.mac_error_count = 0;
