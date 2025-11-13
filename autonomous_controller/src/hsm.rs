@@ -49,7 +49,7 @@ impl fmt::Display for VerifyError {
 }
 
 /// Performance metrics for HSM operations
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PerformanceMetrics {
     /// Total MAC generation operations
     pub mac_gen_count: u64,
@@ -87,21 +87,7 @@ pub struct PerformanceMetrics {
 
 impl PerformanceMetrics {
     pub fn new() -> Self {
-        Self {
-            mac_gen_count: 0,
-            mac_gen_time_us: 0,
-            mac_verify_count: 0,
-            mac_verify_time_us: 0,
-            crc_calc_count: 0,
-            crc_calc_time_us: 0,
-            crc_verify_count: 0,
-            crc_verify_time_us: 0,
-            frame_create_count: 0,
-            frame_create_time_us: 0,
-            frame_verify_count: 0,
-            frame_verify_time_us: 0,
-            e2e_latency_samples: Vec::new(),
-        }
+        Self::default()
     }
 
     /// Print performance statistics
@@ -582,7 +568,7 @@ impl VirtualHSM {
         // In a real system, this would verify a signed token
         // For simulation, we check against the firmware update key hash
         let mut hasher = Sha256::new();
-        hasher.update(&self.firmware_update_key);
+        hasher.update(self.firmware_update_key);
         let expected = hasher.finalize();
 
         update_token
@@ -594,7 +580,7 @@ impl VirtualHSM {
     /// Generate firmware update authorization token (for testing)
     pub fn generate_update_token(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
-        hasher.update(&self.firmware_update_key);
+        hasher.update(self.firmware_update_key);
         let result = hasher.finalize();
 
         let mut output = [0u8; 32];
@@ -667,7 +653,7 @@ impl SecuredCanFrame {
 
         // Prepare data for MAC and CRC calculation
         let mut mac_data = Vec::new();
-        mac_data.extend_from_slice(&(can_id.value() as u32).to_le_bytes());
+        mac_data.extend_from_slice(&can_id.value().to_le_bytes());
         mac_data.extend_from_slice(&data);
         mac_data.extend_from_slice(source.as_bytes());
 
@@ -709,7 +695,7 @@ impl SecuredCanFrame {
 
         // Reconstruct data for verification
         let mut verify_data = Vec::new();
-        verify_data.extend_from_slice(&(self.can_id.value() as u32).to_le_bytes());
+        verify_data.extend_from_slice(&self.can_id.value().to_le_bytes());
         verify_data.extend_from_slice(&self.data);
         verify_data.extend_from_slice(self.source.as_bytes());
 
@@ -721,25 +707,25 @@ impl SecuredCanFrame {
         // Verify MAC (cryptographic check)
         let result = hsm
             .verify_mac(&verify_data, &self.mac, self.session_counter, &self.source)
-            .map_err(|reason| VerifyError::MacMismatch(reason));
+            .map_err(VerifyError::MacMismatch);
 
         // Record performance metrics (only on success)
-        if result.is_ok() {
-            if let (Some(start), Some(metrics)) = (start, &hsm.performance_metrics) {
-                let elapsed = start.elapsed().as_micros() as u64;
+        if result.is_ok()
+            && let (Some(start), Some(metrics)) = (start, &hsm.performance_metrics)
+        {
+            let elapsed = start.elapsed().as_micros() as u64;
 
-                // Calculate end-to-end latency (from frame timestamp to now)
-                let now = chrono::Utc::now();
-                let e2e_latency_us = (now - self.timestamp)
-                    .num_microseconds()
-                    .unwrap_or(0)
-                    .max(0) as u64;
+            // Calculate end-to-end latency (from frame timestamp to now)
+            let now = chrono::Utc::now();
+            let e2e_latency_us = (now - self.timestamp)
+                .num_microseconds()
+                .unwrap_or(0)
+                .max(0) as u64;
 
-                let mut m = metrics.lock().unwrap();
-                m.frame_verify_count += 1;
-                m.frame_verify_time_us += elapsed;
-                m.e2e_latency_samples.push(e2e_latency_us);
-            }
+            let mut m = metrics.lock().unwrap();
+            m.frame_verify_count += 1;
+            m.frame_verify_time_us += elapsed;
+            m.e2e_latency_samples.push(e2e_latency_us);
         }
 
         result

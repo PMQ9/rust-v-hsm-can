@@ -17,10 +17,7 @@ use std::sync::{Arc, Mutex};
 #[serde(tag = "type", content = "details")]
 pub enum SecurityEvent {
     /// ECU started and security system initialized
-    SystemStartup {
-        ecu_id: String,
-        hsm_enabled: bool,
-    },
+    SystemStartup { ecu_id: String, hsm_enabled: bool },
 
     /// Frame verification failed
     VerificationFailure {
@@ -31,10 +28,7 @@ pub enum SecurityEvent {
     },
 
     /// Frame verification succeeded
-    VerificationSuccess {
-        source: String,
-        can_id: u32,
-    },
+    VerificationSuccess { source: String, can_id: u32 },
 
     /// Security state changed
     StateChange {
@@ -59,19 +53,13 @@ pub enum SecurityEvent {
     },
 
     /// ECU entered fail-safe mode
-    FailSafeActivated {
-        reason: String,
-    },
+    FailSafeActivated { reason: String },
 
     /// Security system reset
-    SecurityReset {
-        reason: String,
-    },
+    SecurityReset { reason: String },
 
     /// Trusted ECU key registered
-    KeyRegistration {
-        ecu_name: String,
-    },
+    KeyRegistration { ecu_name: String },
 
     /// Security statistics snapshot
     StatisticsSnapshot {
@@ -136,7 +124,11 @@ impl SecurityLogEntry {
         hasher.update(self.sequence.to_le_bytes());
         hasher.update(self.timestamp.to_rfc3339().as_bytes());
         hasher.update(self.ecu_id.as_bytes());
-        hasher.update(serde_json::to_string(&self.event).unwrap_or_default().as_bytes());
+        hasher.update(
+            serde_json::to_string(&self.event)
+                .unwrap_or_default()
+                .as_bytes(),
+        );
         hasher.update(self.prev_hash.as_bytes());
 
         let hash_bytes = hasher.finalize();
@@ -206,23 +198,18 @@ impl SecurityLogger {
         let mut last_hash = self.last_hash.lock().unwrap();
 
         // Create new entry with chained hash
-        let entry = SecurityLogEntry::new(
-            *seq,
-            self.ecu_id.clone(),
-            event,
-            last_hash.clone(),
-        );
+        let entry = SecurityLogEntry::new(*seq, self.ecu_id.clone(), event, last_hash.clone());
 
         // Update sequence and last hash
         *seq += 1;
         *last_hash = entry.entry_hash.clone();
 
         // Write to log file (JSONL format - one JSON object per line)
-        if let Ok(mut writer) = self.writer.lock() {
-            if let Ok(json) = serde_json::to_string(&entry) {
-                let _ = writeln!(writer, "{}", json);
-                let _ = writer.flush();
-            }
+        if let Ok(mut writer) = self.writer.lock()
+            && let Ok(json) = serde_json::to_string(&entry)
+        {
+            let _ = writeln!(writer, "{}", json);
+            let _ = writer.flush();
         }
     }
 
@@ -477,8 +464,9 @@ mod tests {
     #[test]
     fn test_security_logger() {
         let temp_dir = TempDir::new().unwrap();
-        let logger = SecurityLogger::new("TEST_ECU".to_string(), Some(temp_dir.path().to_path_buf()))
-            .expect("Failed to create logger");
+        let logger =
+            SecurityLogger::new("TEST_ECU".to_string(), Some(temp_dir.path().to_path_buf()))
+                .expect("Failed to create logger");
 
         logger.log_startup(true);
         logger.log_verification_success("SENSOR".to_string(), 0x100);
@@ -493,8 +481,9 @@ mod tests {
     #[test]
     fn test_log_file_verification() {
         let temp_dir = TempDir::new().unwrap();
-        let logger = SecurityLogger::new("TEST_ECU".to_string(), Some(temp_dir.path().to_path_buf()))
-            .expect("Failed to create logger");
+        let logger =
+            SecurityLogger::new("TEST_ECU".to_string(), Some(temp_dir.path().to_path_buf()))
+                .expect("Failed to create logger");
 
         logger.log_startup(true);
         logger.log_verification_success("SENSOR".to_string(), 0x100);
@@ -504,15 +493,20 @@ mod tests {
         let result = verify_log_file(logger.log_path().clone()).expect("Verification failed");
 
         assert_eq!(result.total_entries, 3);
-        assert!(result.verified, "Log should be verified: {:?}", result.issues);
+        assert!(
+            result.verified,
+            "Log should be verified: {:?}",
+            result.issues
+        );
         assert!(result.issues.is_empty());
     }
 
     #[test]
     fn test_tamper_detection() {
         let temp_dir = TempDir::new().unwrap();
-        let logger = SecurityLogger::new("TEST_ECU".to_string(), Some(temp_dir.path().to_path_buf()))
-            .expect("Failed to create logger");
+        let logger =
+            SecurityLogger::new("TEST_ECU".to_string(), Some(temp_dir.path().to_path_buf()))
+                .expect("Failed to create logger");
 
         logger.log_startup(true);
         logger.log_verification_success("SENSOR".to_string(), 0x100);

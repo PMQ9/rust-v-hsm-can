@@ -195,7 +195,7 @@ See [tests/README.md](tests/README.md) for details.
 ### ISO 21434 Roadmap
 
 **Phase 1 - Foundation:**
-- [ ] Security event logging (tamper-resistant audit trail)
+- [x] Security event logging (tamper-resistant audit trail)
 - [ ] CAN ID access control whitelist (authorization model)
 - [ ] Enhanced replay protection (sliding window + timestamps)
 

@@ -98,8 +98,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Initialize security logger
     println!("{} Initializing security event logger...", "→".cyan());
-    let security_logger = SecurityLogger::new(ECU_NAME.to_string(), None)
-        .expect("Failed to create security logger");
+    let security_logger =
+        SecurityLogger::new(ECU_NAME.to_string(), None).expect("Failed to create security logger");
     println!("   ✓ Logging to: {:?}", security_logger.log_path());
 
     // Initialize attack detector with security logging
@@ -295,7 +295,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
 
             // Periodically re-broadcast shutdown status so monitor always shows it
-            if counter % 10 == 0 {
+            if counter.is_multiple_of(10) {
                 let status_data = vec![0xFF]; // 0xFF = Emergency Shutdown
                 let status_frame = SecuredCanFrame::new(
                     can_ids::AUTO_STATUS,
@@ -307,7 +307,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
 
             // Continue monitoring sensors but DO NOT send control commands
-            if counter % 50 == 0 {
+            if counter.is_multiple_of(50) {
                 println!(
                     "{} [STOPPED] Monitoring: Avg Wheel Speed={:.1} rad/s",
                     "⚠️".red(),
@@ -354,7 +354,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
         writer.send_secured_frame(steering_frame).await?;
 
-        if counter % 10 == 0 {
+        if counter.is_multiple_of(10) {
             println!(
                 "{} Control: Brake={:.0}%, Throttle={:.0}%, Steering={:.1}° | Avg Wheel Speed={:.1} rad/s",
                 "→".bright_blue(),
@@ -374,10 +374,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
 
         // Periodically send performance stats to monitor (if enabled)
-        if perf_mode && counter % 100 == 0 && counter > 0 {
-            if let Some(snapshot) = hsm.get_performance_snapshot() {
-                let _ = writer.send_performance_stats(snapshot).await;
-            }
+        if perf_mode
+            && counter.is_multiple_of(100)
+            && counter > 0
+            && let Some(snapshot) = hsm.get_performance_snapshot()
+        {
+            let _ = writer.send_performance_stats(snapshot).await;
         }
 
         counter += 1;

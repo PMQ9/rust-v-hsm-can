@@ -1,7 +1,7 @@
 /// Security Log Analyzer Tool
 ///
 /// Verifies the integrity of security audit logs and provides analysis of security events.
-use autonomous_vehicle_sim::security_log::{verify_log_file, SecurityEvent, SecurityLogEntry};
+use autonomous_vehicle_sim::security_log::{SecurityEvent, SecurityLogEntry, verify_log_file};
 use colored::*;
 use std::collections::HashMap;
 use std::env;
@@ -13,15 +13,21 @@ fn main() {
     println!();
     println!(
         "{}",
-        "═══════════════════════════════════════════════════════".cyan().bold()
+        "═══════════════════════════════════════════════════════"
+            .cyan()
+            .bold()
     );
     println!(
         "{}",
-        "         SECURITY LOG ANALYZER                        ".cyan().bold()
+        "         SECURITY LOG ANALYZER                        "
+            .cyan()
+            .bold()
     );
     println!(
         "{}",
-        "═══════════════════════════════════════════════════════".cyan().bold()
+        "═══════════════════════════════════════════════════════"
+            .cyan()
+            .bold()
     );
     println!();
 
@@ -29,7 +35,11 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        println!("{} Usage: {} <log_file_path>", "ERROR:".red().bold(), args[0]);
+        println!(
+            "{} Usage: {} <log_file_path>",
+            "ERROR:".red().bold(),
+            args[0]
+        );
         println!();
         println!("Examples:");
         println!("  {} security_logs/AUTONOMOUS_CTRL_*.jsonl", args[0]);
@@ -53,23 +63,30 @@ fn main() {
 
     // Verify log integrity
     println!("{}", "INTEGRITY VERIFICATION".yellow().bold());
-    println!("{}", "─────────────────────────────────────────────────────".bright_black());
+    println!(
+        "{}",
+        "─────────────────────────────────────────────────────".bright_black()
+    );
 
     match verify_log_file(log_path.clone()) {
         Ok(result) => {
-            println!(
-                "{} Total log entries: {}",
-                "→".cyan(),
-                result.total_entries
-            );
+            println!("{} Total log entries: {}", "→".cyan(), result.total_entries);
 
             if result.verified {
-                println!("{} {}", "✓".green().bold(), "Log integrity verified".green());
+                println!(
+                    "{} {}",
+                    "✓".green().bold(),
+                    "Log integrity verified".green()
+                );
                 println!("   • All entry hashes are valid");
                 println!("   • Chain integrity maintained");
                 println!("   • No tampering detected");
             } else {
-                println!("{} {}", "✗".red().bold(), "Log integrity FAILED".red().bold());
+                println!(
+                    "{} {}",
+                    "✗".red().bold(),
+                    "Log integrity FAILED".red().bold()
+                );
                 println!();
                 println!("{} Issues detected:", "⚠".yellow());
                 for issue in &result.issues {
@@ -93,11 +110,18 @@ fn main() {
 
     // Parse and analyze log entries
     println!("{}", "SECURITY EVENT ANALYSIS".yellow().bold());
-    println!("{}", "─────────────────────────────────────────────────────".bright_black());
+    println!(
+        "{}",
+        "─────────────────────────────────────────────────────".bright_black()
+    );
 
     match analyze_log_events(&log_path) {
         Ok(analysis) => {
-            println!("{} ECU: {}", "→".cyan(), analysis.ecu_name.bright_white().bold());
+            println!(
+                "{} ECU: {}",
+                "→".cyan(),
+                analysis.ecu_name.bright_white().bold()
+            );
             println!(
                 "{} Time range: {} to {}",
                 "→".cyan(),
@@ -115,7 +139,10 @@ fn main() {
 
             if analysis.attack_count > 0 {
                 println!("{}", "ATTACKS DETECTED".red().bold());
-                println!("   • Total attacks: {}", analysis.attack_count.to_string().red().bold());
+                println!(
+                    "   • Total attacks: {}",
+                    analysis.attack_count.to_string().red().bold()
+                );
                 for attack in &analysis.attacks {
                     println!("   • {}", attack);
                 }
@@ -172,7 +199,10 @@ fn main() {
     }
 
     println!();
-    println!("{}", "═══════════════════════════════════════════════════════".cyan());
+    println!(
+        "{}",
+        "═══════════════════════════════════════════════════════".cyan()
+    );
     println!();
 }
 
@@ -265,10 +295,7 @@ fn analyze_log_events(log_path: &PathBuf) -> Result<LogAnalysis, String> {
                 trigger,
             } => {
                 state_changes += 1;
-                state_change_list.push(format!(
-                    "{} -> {} ({})",
-                    from_state, to_state, trigger
-                ));
+                state_change_list.push(format!("{} -> {} ({})", from_state, to_state, trigger));
             }
             _ => {}
         }

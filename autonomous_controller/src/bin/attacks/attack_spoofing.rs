@@ -84,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         writer.send_frame(spoofed_frame).await?;
 
-        if counter % 10 == 0 {
+        if counter.is_multiple_of(10) {
             let phase_name = match phase {
                 0 => "Panic Braking",
                 1 => "Rapid Pulse",
@@ -104,7 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         counter += 1;
 
         // Change attack phase every 5 seconds (50 iterations at 100ms each)
-        if counter % 50 == 0 {
+        if counter.is_multiple_of(50) {
             phase = (phase + 1) % 3;
             println!();
             println!("{} Switching to next attack phase...", "→".red());

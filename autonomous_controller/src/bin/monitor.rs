@@ -134,14 +134,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     loop {
         // Check for user input (q to quit) - only if raw mode is available
-        if use_raw_mode {
-            if let Ok(true) = event::poll(Duration::from_millis(10)) {
-                if let Ok(Event::Key(key_event)) = event::read() {
-                    if key_event.code == KeyCode::Char('q') {
-                        break;
-                    }
-                }
-            }
+        if use_raw_mode
+            && let Ok(true) = event::poll(Duration::from_millis(10))
+            && let Ok(Event::Key(key_event)) = event::read()
+            && key_event.code == KeyCode::Char('q')
+        {
+            break;
         }
 
         // Process all available frames
@@ -217,11 +215,12 @@ impl Dashboard {
         };
 
         // Check for emergency shutdown status from controller
-        if secured_frame.can_id == can_ids::AUTO_STATUS {
-            if !secured_frame.data.is_empty() && secured_frame.data[0] == 0xFF {
-                // 0xFF = Emergency Shutdown
-                self.controller_emergency_shutdown = true;
-            }
+        if secured_frame.can_id == can_ids::AUTO_STATUS
+            && !secured_frame.data.is_empty()
+            && secured_frame.data[0] == 0xFF
+        {
+            // 0xFF = Emergency Shutdown
+            self.controller_emergency_shutdown = true;
         }
 
         // Categorize frame based on CAN ID and source
@@ -255,7 +254,7 @@ impl Dashboard {
 
         // Track sensor messages received by controller
         if secured_frame.source != "AUTONOMOUS_CTRL" {
-            let sensor_ids = vec![
+            let sensor_ids = [
                 can_ids::WHEEL_SPEED_FL,
                 can_ids::WHEEL_SPEED_FR,
                 can_ids::WHEEL_SPEED_RL,

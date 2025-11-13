@@ -303,6 +303,19 @@ Each ECU performs secure boot on startup:
 3. Verify HMAC signature using Secure Boot Key
 4. If valid, execute firmware; if invalid, halt
 
+### Security Event Logging (ISO 21434)
+
+All ECUs maintain tamper-resistant security logs using chained SHA256 hashing. Each entry includes the hash of the previous entry, making tampering detectable.
+
+**Logged events**: System startup, verification failures, state changes, attacks, frame rejections, fail-safe activations
+
+**Analyze logs**:
+```bash
+cargo run --bin security_log_analyzer security_logs/AUTONOMOUS_CTRL_*.jsonl
+```
+
+The analyzer verifies hash integrity, chain continuity, and detects tampering. Provides event statistics, attack summaries, and timeline analysis.
+
 ## Future Enhancements
 
 - [x] V-HSM integration for message authentication

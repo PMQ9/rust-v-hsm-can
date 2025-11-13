@@ -2,6 +2,14 @@
 
 ## 2025-11-12
 
+### Security Event Logging (ISO 21434 Compliance)
+- Implemented tamper-resistant audit trail with chained hashing (SHA256)
+- SecurityLogger logs 10 event types: verification failures, state changes, attacks, etc.
+- JSONL format with automatic timestamped log rotation per ECU session
+- Integrated with all critical ECUs (autonomous_controller, brake_controller, steering_controller)
+- Added security_log_analyzer tool: verifies integrity, detects tampering, analyzes events
+- Usage: `cargo run --bin security_log_analyzer security_logs/AUTONOMOUS_CTRL_*.jsonl`
+
 ### Documentation
 - Added ISO 21434 roadmap to README with 4-phase implementation plan
 

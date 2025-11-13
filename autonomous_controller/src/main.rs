@@ -38,7 +38,7 @@ fn main() {
     // Cleanup: Kill any old simulation processes first
     println!("{} Cleaning up old processes...", "→".yellow());
     let cleanup = Command::new("pkill")
-        .args(&[
+        .args([
             "-f",
             "target/debug/(bus_server|autonomous_controller|wheel|engine|steering|brake|monitor)",
         ])
@@ -63,9 +63,9 @@ fn main() {
     // Start bus server first
     println!("{} Starting CAN bus server...", "→".green());
     let mut bus_cmd = Command::new("cargo");
-    bus_cmd.args(&["run", "--bin", "bus_server"]);
+    bus_cmd.args(["run", "--bin", "bus_server"]);
     if perf_mode {
-        bus_cmd.args(&["--", "--perf"]);
+        bus_cmd.args(["--", "--perf"]);
     }
     match bus_cmd.stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
         Ok(child) => {
@@ -95,9 +95,9 @@ fn main() {
 
     for sensor in &sensors {
         let mut sensor_cmd = Command::new("cargo");
-        sensor_cmd.args(&["run", "--bin", sensor]);
+        sensor_cmd.args(["run", "--bin", sensor]);
         if perf_mode {
-            sensor_cmd.args(&["--", "--perf"]);
+            sensor_cmd.args(["--", "--perf"]);
         }
         match sensor_cmd
             .stdout(Stdio::null())
@@ -118,9 +118,9 @@ fn main() {
     // Start autonomous controller
     println!("\n{} Starting autonomous controller...", "→".green());
     let mut controller_cmd = Command::new("cargo");
-    controller_cmd.args(&["run", "--bin", "autonomous_controller"]);
+    controller_cmd.args(["run", "--bin", "autonomous_controller"]);
     if perf_mode {
-        controller_cmd.args(&["--", "--perf"]);
+        controller_cmd.args(["--", "--perf"]);
         println!("{} Performance tracking enabled", "→".bright_blue());
     }
 
@@ -150,9 +150,9 @@ fn main() {
 
     for actuator in &actuators {
         let mut actuator_cmd = Command::new("cargo");
-        actuator_cmd.args(&["run", "--bin", actuator]);
+        actuator_cmd.args(["run", "--bin", actuator]);
         if perf_mode {
-            actuator_cmd.args(&["--", "--perf"]);
+            actuator_cmd.args(["--", "--perf"]);
         }
         match actuator_cmd
             .stdout(Stdio::null())
@@ -214,7 +214,7 @@ fn main() {
     println!("{} Starting monitor (dashboard)...", "→".green());
 
     let mut monitor_process = match Command::new("cargo")
-        .args(&["run", "--bin", "monitor"])
+        .args(["run", "--bin", "monitor"])
         .spawn()
     {
         Ok(child) => {

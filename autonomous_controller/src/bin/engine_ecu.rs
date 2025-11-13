@@ -122,7 +122,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
         writer.send_secured_frame(throttle_frame).await?;
 
-        if counter % 20 == 0 {
+        if counter.is_multiple_of(20) {
             println!(
                 "{} Engine: RPM={:.0}, Throttle={:.0}%",
                 "→".bright_black(),
@@ -132,10 +132,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
 
         // Periodically send performance stats to monitor (if enabled)
-        if perf_mode && counter % 100 == 0 && counter > 0 {
-            if let Some(snapshot) = hsm.get_performance_snapshot() {
-                let _ = writer.send_performance_stats(snapshot).await;
-            }
+        if perf_mode
+            && counter.is_multiple_of(100)
+            && counter > 0
+            && let Some(snapshot) = hsm.get_performance_snapshot()
+        {
+            let _ = writer.send_performance_stats(snapshot).await;
         }
 
         counter += 1;
