@@ -4,6 +4,7 @@ use autonomous_vehicle_sim::network::{BusClient, NetMessage};
 use autonomous_vehicle_sim::protected_memory::ProtectedMemory;
 use autonomous_vehicle_sim::security_log::SecurityLogger;
 use autonomous_vehicle_sim::types::{can_ids, encoding};
+use autonomous_vehicle_sim::{AnomalyResult, baseline_persistence};
 use colored::*;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -48,6 +49,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         *autonomous_hsm.get_symmetric_key(),
     );
     println!("  ✓ Registered AUTONOMOUS_CTRL");
+
+    // Load anomaly detection baseline if available
+    let baseline_path = "baseline_steering_ctrl.json";
+    if std::path::Path::new(baseline_path).exists() {
+        println!("{} Loading anomaly detection baseline...", "→".cyan());
+        match baseline_persistence::load_baseline(baseline_path, &hsm) {
+            Ok(baseline) => {
+                hsm.load_anomaly_baseline(baseline)?;
+                println!("{} Anomaly-based IDS enabled", "✓".green().bold());
+            }
+            Err(e) => {
+                println!("{} Failed to load baseline: {}", "⚠️".yellow(), e);
+                println!("   → Continuing without anomaly detection");
+            }
+        }
+    } else {
+        println!(
+            "{} No anomaly baseline found at {}",
+            "ℹ".bright_blue(),
+            baseline_path
+        );
+        println!("   → Run calibration tool to generate baseline");
+        println!("   → Continuing without anomaly detection");
+    }
+    println!();
 
     // Initialize protected memory
     println!("{} Initializing protected memory...", "→".cyan());
@@ -135,8 +161,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                     detector.record_success();
                                 } // Lock is dropped here
 
-                                if frame_tx.send(secured_frame).await.is_err() {
-                                    break;
+                                // Anomaly detection (after successful MAC/CRC verification)
+                                let anomaly_result = hsm_clone.detect_anomaly(&secured_frame);
+                                match anomaly_result {
+                                    AnomalyResult::Normal => {
+                                        // No anomaly - process frame normally
+                                        if frame_tx.send(secured_frame).await.is_err() {
+                                            break;
+                                        }
+                                    }
+                                    AnomalyResult::Warning(report) => {
+                                        // Medium severity (80-99% confidence)
+                                        println!(
+                                            "{} {} ({}σ)",
+                                            "⚠️".yellow(),
+                                            "ANOMALY WARNING".yellow().bold(),
+                                            report.confidence_sigma
+                                        );
+                                        println!("   • {}", report.anomaly_type);
+
+                                        // Still process frame but log warning
+                                        if frame_tx.send(secured_frame).await.is_err() {
+                                            break;
+                                        }
+                                    }
+                                    AnomalyResult::Attack(report) => {
+                                        // High severity (>99% confidence) - reject frame
+                                        let should_continue = {
+                                            let mut detector = detector_clone.lock().unwrap();
+                                            detector.record_error(
+                                                ValidationError::AnomalyDetected(
+                                                    report.to_string(),
+                                                ),
+                                                &secured_frame.source,
+                                            )
+                                        };
+
+                                        if !should_continue {
+                                            println!(
+                                                "{} Frame rejected - anomaly attack detected",
+                                                "✗".red()
+                                            );
+                                        }
+                                        // Don't process the frame
+                                    }
                                 }
                             }
                             Err(e) => {

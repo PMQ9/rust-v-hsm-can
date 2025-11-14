@@ -422,6 +422,9 @@ pub struct VirtualHSM {
 
     /// Replay protection configuration
     replay_config: ReplayProtectionConfig,
+
+    /// Anomaly detector for behavioral IDS (None if disabled)
+    anomaly_detector: Option<crate::anomaly_detection::AnomalyDetector>,
 }
 
 impl VirtualHSM {
@@ -455,6 +458,7 @@ impl VirtualHSM {
             can_id_permissions: None,
             replay_protection_state: HashMap::new(),
             replay_config: ReplayProtectionConfig::default(),
+            anomaly_detector: None, // Disabled by default
         };
 
         // Generate deterministic keys based on seed
@@ -930,6 +934,141 @@ impl VirtualHSM {
     /// Get reference to access control permissions
     pub fn get_permissions(&self) -> Option<&crate::types::CanIdPermissions> {
         self.can_id_permissions.as_ref()
+    }
+
+    // ========================================================================
+    // Anomaly Detection Methods
+    // ========================================================================
+
+    /// Enable anomaly detection with a pre-trained baseline
+    pub fn load_anomaly_baseline(
+        &mut self,
+        baseline: crate::anomaly_detection::AnomalyBaseline,
+    ) -> Result<(), String> {
+        let mut detector = crate::anomaly_detection::AnomalyDetector::new();
+        detector.load_baseline(baseline)?;
+
+        self.anomaly_detector = Some(detector);
+
+        println!(
+            "{} Anomaly detection enabled for {}",
+            "→".cyan(),
+            self.ecu_id.bright_white()
+        );
+
+        Ok(())
+    }
+
+    /// Start anomaly detection training mode
+    pub fn start_anomaly_training(&mut self, min_samples_per_can_id: u64) -> Result<(), String> {
+        let mut detector = crate::anomaly_detection::AnomalyDetector::new();
+        detector.start_training(self.ecu_id.clone(), min_samples_per_can_id)?;
+
+        self.anomaly_detector = Some(detector);
+
+        println!(
+            "{} Anomaly detection training started for {}",
+            "→".cyan(),
+            self.ecu_id.bright_white()
+        );
+        println!(
+            "   • Minimum samples per CAN ID: {}",
+            min_samples_per_can_id.to_string().bright_white()
+        );
+
+        Ok(())
+    }
+
+    /// Train anomaly detector with a frame (only in training mode)
+    pub fn train_anomaly_detector(&mut self, frame: &SecuredCanFrame) -> Result<(), String> {
+        if let Some(detector) = &mut self.anomaly_detector {
+            detector.train(frame)?;
+        }
+        Ok(())
+    }
+
+    /// Finalize anomaly training and get baseline for saving
+    pub fn finalize_anomaly_training(
+        &mut self,
+    ) -> Result<crate::anomaly_detection::AnomalyBaseline, String> {
+        let detector = self
+            .anomaly_detector
+            .as_mut()
+            .ok_or("Anomaly detector not initialized")?;
+
+        let baseline = detector.finalize_training()?;
+
+        println!(
+            "{} Anomaly detection training finalized",
+            "✓".green().bold()
+        );
+        println!(
+            "   • Total samples: {}",
+            baseline.total_samples.to_string().bright_white()
+        );
+        println!(
+            "   • CAN IDs profiled: {}",
+            baseline.profiles.len().to_string().bright_white()
+        );
+
+        Ok(baseline)
+    }
+
+    /// Activate anomaly detection with finalized baseline
+    pub fn activate_anomaly_detection(
+        &mut self,
+        baseline: crate::anomaly_detection::AnomalyBaseline,
+    ) {
+        if let Some(detector) = &mut self.anomaly_detector {
+            detector.activate_detection(baseline);
+            println!(
+                "{} Anomaly detection activated for {}",
+                "✓".green().bold(),
+                self.ecu_id.bright_white()
+            );
+        }
+    }
+
+    /// Detect anomalies in a frame (call after successful MAC/CRC verification)
+    pub fn detect_anomaly(
+        &mut self,
+        frame: &SecuredCanFrame,
+    ) -> crate::anomaly_detection::AnomalyResult {
+        match &mut self.anomaly_detector {
+            Some(detector) => detector.detect(frame),
+            None => crate::anomaly_detection::AnomalyResult::Normal,
+        }
+    }
+
+    /// Check if anomaly detection is enabled
+    pub fn is_anomaly_detection_enabled(&self) -> bool {
+        self.anomaly_detector.is_some()
+    }
+
+    /// Check if anomaly detector is in training mode
+    pub fn is_anomaly_training(&self) -> bool {
+        self.anomaly_detector
+            .as_ref()
+            .map(|d| d.is_training())
+            .unwrap_or(false)
+    }
+
+    /// Check if anomaly detector is in detection mode
+    pub fn is_anomaly_detecting(&self) -> bool {
+        self.anomaly_detector
+            .as_ref()
+            .map(|d| d.is_detecting())
+            .unwrap_or(false)
+    }
+
+    /// Get anomaly detector mode
+    pub fn anomaly_detector_mode(&self) -> Option<crate::anomaly_detection::DetectorMode> {
+        self.anomaly_detector.as_ref().map(|d| d.mode())
+    }
+
+    /// Get reference to current anomaly baseline
+    pub fn anomaly_baseline(&self) -> Option<&crate::anomaly_detection::AnomalyBaseline> {
+        self.anomaly_detector.as_ref().and_then(|d| d.baseline())
     }
 }
 

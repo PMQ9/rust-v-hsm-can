@@ -319,3 +319,123 @@ After making code changes:
 2. Add a very very concise summary of the changes to [CHANGELOG.md](CHANGELOG.md)
 3. Do not create new markdown files unless explicitly requested
 4. Wait for the user to review and commit
+
+## Anomaly-Based Intrusion Detection System (IDS)
+
+### What is Anomaly-Based IDS?
+
+Anomaly-based IDS detects attacks by identifying deviations from "normal" CAN bus behavior. Unlike signature-based detection (known attack patterns), it uses statistical profiling to establish a baseline of normal operation, then flags behavior that deviates significantly.
+
+**Key Benefits:**
+- Detects zero-day attacks and novel attack patterns
+- Identifies compromised ECUs with valid credentials
+- Catches behavioral anomalies MAC/CRC can't detect
+- No machine learning required - simple statistics (mean, std dev)
+
+### How It Works
+
+**1. Factory Calibration (Training Phase)**
+```bash
+# Run vehicle simulation in background
+cargo run &
+
+# Collect baseline (5000+ samples per CAN ID)
+cargo run --bin calibrate_anomaly_baseline -- \
+    --ecu BRAKE_CTRL \
+    --samples 5000 \
+    --duration 300 \
+    --output baseline_brake_ctrl.json
+```
+
+This collects normal CAN traffic and calculates:
+- Message frequency statistics (mean interval, std dev)
+- Data range statistics (min/max/mean/std dev per byte)
+- Expected source ECUs per CAN ID
+- Message rate (msgs/second)
+
+**2. Baseline Storage**
+
+Baselines are signed with HSM and saved as JSON:
+```json
+{
+  "baseline": { ... },
+  "signature": [u8; 32],
+  "fingerprint": [u8; 32]
+}
+```
+
+- Signature prevents tampering
+- Fingerprint verifies baseline integrity
+- Uses SHA256 + HMAC-SHA256
+
+**3. Production Deployment**
+
+ECUs load baseline on boot:
+```rust
+// In brake_controller.rs
+let baseline = baseline_persistence::load_baseline("baseline_brake_ctrl.json", &hsm)?;
+hsm.load_anomaly_baseline(baseline)?;
+```
+
+**4. Detection Phase**
+
+After successful MAC/CRC verification, HSM detects anomalies:
+```rust
+let anomaly_result = hsm.detect_anomaly(&secured_frame);
+match anomaly_result {
+    AnomalyResult::Normal => { /* Process normally */ }
+    AnomalyResult::Warning(report) => { /* 80-99% confidence - log warning */ }
+    AnomalyResult::Attack(report) => { /* >99% confidence - reject frame */ }
+}
+```
+
+### Graduated Response Levels
+
+| Confidence | Sigma (σ) | Action | Use Case |
+|------------|-----------|--------|----------|
+| < 80% | < 1.3σ | **ALLOW** | Within normal variance |
+| 80-99% | 1.3-3σ | **WARNING** | Unusual but tolerable, log for investigation |
+| > 99% | > 3σ | **ATTACK** | High confidence anomaly, trigger fail-safe |
+
+### Anomaly Types Detected
+
+1. **Unknown CAN ID**: Message on CAN ID not seen during training
+2. **Unexpected Source**: ECU sending on CAN ID it doesn't normally use
+3. **Interval Anomaly**: Message arriving too fast/slow (frequency)
+4. **Rate Anomaly**: Too many/few messages per second
+5. **Data Range Anomaly**: Byte value outside expected range (e.g., wheel speed > 300 rad/s)
+
+### Retraining Baselines
+
+**When to retrain:**
+- Vehicle configuration changes (new ECU, software update)
+- Operational mode changes (city vs highway profiles)
+- After maintenance/repairs
+
+**How to retrain:**
+1. Run calibration tool in controlled environment
+2. Verify baseline with test scenarios
+3. Sign with HSM
+4. Deploy to production ECUs
+
+**Security Note:** Always train in secure factory/lab environment. Never retrain in production - this creates attack vector during startup.
+
+### Integration Points
+
+**Location**: `src/anomaly_detection.rs`, `src/baseline_persistence.rs`
+
+**ECU Integration**:
+- Brake Controller: `src/bin/brake_controller.rs:44-67, 156-197`
+- Steering Controller: `src/bin/steering_controller.rs:53-76, 164-206`
+- Autonomous Controller: `src/bin/autonomous_controller.rs:69-92, 193-235`
+
+**HSM Methods**:
+- `hsm.load_anomaly_baseline()` - Load pre-trained baseline
+- `hsm.start_anomaly_training()` - Start training mode (factory only)
+- `hsm.detect_anomaly()` - Detect anomalies in frame
+
+### Testing
+
+**Unit Tests**: `cargo test --lib anomaly_detection` (9 tests)
+**Regression Tests**: `cargo test --test anomaly_ids_regression_tests -- --ignored` (3 tests)
+
