@@ -55,3 +55,7 @@ jobs:
     - name: Run access control regression tests
       run: |
         cargo test --test access_control_regression_tests -- --ignored --test-threads=1 --nocapture
+
+    - name: Run replay protection regression tests
+      run: |
+        cargo test --test replay_protection_regression_tests -- --ignored --test-threads=1 --nocapture

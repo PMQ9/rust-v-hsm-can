@@ -96,7 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (frame_tx, mut frame_rx) = mpsc::channel::<SecuredCanFrame>(100);
 
     // Clone HSM and attack detector for receiver task
-    let hsm_clone = hsm.clone();
+    let mut hsm_clone = hsm.clone();
     let detector_clone = Arc::clone(&attack_detector);
 
     // Spawn receiver task with MAC/CRC verification and attack detection
@@ -118,7 +118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         }
 
                         // Verify MAC and CRC for frames we care about
-                        match secured_frame.verify(&hsm_clone) {
+                        match secured_frame.verify(&mut hsm_clone) {
                             Ok(_) => {
                                 // Successful verification - reset error counters
                                 {
