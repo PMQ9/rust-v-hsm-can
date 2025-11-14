@@ -2,6 +2,12 @@
 
 ## 2025-11-14
 
+### Bug Fix: Interval Anomaly Detection
+- Fixed interval anomaly detection not working after loading baselines from disk
+- Added runtime interval_trackers HashMap to maintain last-seen timestamps during detection
+- Interval detection now properly works alongside rate, data range, source, and CAN ID anomaly detection
+- Added baseline JSON files to .gitignore for security (deployment artifacts, not source code)
+
 ### Anomaly-Based IDS with Statistical Baseline Profiling
 - Implemented behavioral anomaly detection using statistical profiling (no ML, simple statistics)
 - Factory calibration mode: Collect CAN traffic to establish normal behavior baseline

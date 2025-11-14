@@ -1,2 +1,9 @@
 /target
 Cargo.lock
+
+# Runtime-generated security logs
+**/security_logs/
+
+# Anomaly detection baselines (deployment artifacts, not source code)
+# These should be generated in secure factory environments
+**/baseline_*.json

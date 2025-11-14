@@ -419,6 +419,9 @@ pub struct AnomalyDetector {
 
     /// Rate window duration in seconds
     rate_window_secs: i64,
+
+    /// Interval trackers for each CAN ID (runtime state for last-seen timestamps)
+    interval_trackers: HashMap<u32, DateTime<Utc>>,
 }
 
 impl AnomalyDetector {
@@ -431,6 +434,7 @@ impl AnomalyDetector {
             min_samples_per_can_id: 1000, // Default: 1000 samples per CAN ID
             rate_trackers: HashMap::new(),
             rate_window_secs: 1, // 1-second sliding window for rate calculation
+            interval_trackers: HashMap::new(),
         }
     }
 
@@ -577,14 +581,16 @@ impl AnomalyDetector {
             );
         }
 
-        // Check 3: Inter-arrival interval anomaly
-        if let Some(last_ts) = profile.last_seen {
+        // Check 3: Inter-arrival interval anomaly (using runtime tracker)
+        if let Some(&last_ts) = self.interval_trackers.get(&can_id) {
             let interval_ms = (frame.timestamp - last_ts).num_milliseconds() as f64;
             if interval_ms > 0.0 && profile.interval_std_dev > 0.0 {
                 let deviation = (interval_ms - profile.avg_interval_ms).abs();
                 let sigma = deviation / profile.interval_std_dev;
 
                 if sigma >= baseline.warning_threshold_sigma {
+                    // Update tracker before returning (important for next detection)
+                    self.interval_trackers.insert(can_id, frame.timestamp);
                     return self.create_anomaly_result(
                         can_id,
                         &frame.source,
@@ -598,6 +604,8 @@ impl AnomalyDetector {
                 }
             }
         }
+        // Update interval tracker for next detection
+        self.interval_trackers.insert(can_id, frame.timestamp);
 
         // Check 4: Message rate anomaly
         let rate_tracker = self
