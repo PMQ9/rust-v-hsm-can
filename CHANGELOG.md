@@ -4,8 +4,10 @@
 
 ### Test Fixes and CI Improvements
 - Fixed infinite loop in attack_replay test binary (added max replay limit)
-- Split CI pipeline into 6 parallel jobs: format check, build, clippy, unit tests, and 3 regression test suites
-- Optimized CI execution time with matrix strategy for regression tests
+- Fixed attack_replay to send SecuredCanFrame instead of CanFrame for proper replay detection
+- Fixed rustfmt formatting issues in replay protection code
+- Fixed unit test job to use `--workspace --lib` for testing all packages
+- Optimized CI pipeline with fail-fast formatting check and sequential execution
 
 ### Enhanced Replay Protection (ISO 21434 Compliance)
 - Implemented sliding window tracking (100 counters per ECU) with timestamp validation
