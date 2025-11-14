@@ -1,4 +1,6 @@
 pub mod access_control;
+pub mod anomaly_detection;
+pub mod baseline_persistence;
 pub mod can_bus;
 pub mod ecu;
 pub mod error_handling;
@@ -10,6 +12,11 @@ pub mod security_log;
 pub mod types;
 
 pub use access_control::{build_autonomous_vehicle_policies, load_policy_for_ecu};
+pub use anomaly_detection::{
+    AnomalyBaseline, AnomalyDetector, AnomalyReport, AnomalyResult, AnomalySeverity, AnomalyType,
+    DetectorMode,
+};
+pub use baseline_persistence::{SignedBaseline, load_baseline, save_baseline};
 pub use can_bus::VirtualCanBus;
 pub use ecu::Ecu;
 pub use error_handling::{AttackDetector, SecurityState, ValidationError};

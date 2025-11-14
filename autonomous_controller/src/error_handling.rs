@@ -14,13 +14,14 @@ pub const UNSECURED_FRAME_THRESHOLD: u32 = 1; // Immediately trigger on unsecure
 pub const REPLAY_ERROR_THRESHOLD: u32 = 1; // Immediately trigger on replay attacks (no tolerance)
 
 /// Types of validation errors
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidationError {
     CrcMismatch,
     MacMismatch,
     UnsecuredFrame,
     UnauthorizedAccess,
     ReplayDetected,
+    AnomalyDetected(String), // Description of anomaly
 }
 
 impl ValidationError {
@@ -44,6 +45,7 @@ impl fmt::Display for ValidationError {
             ValidationError::UnsecuredFrame => write!(f, "Unsecured Frame (No MAC)"),
             ValidationError::UnauthorizedAccess => write!(f, "Unauthorized CAN ID Access"),
             ValidationError::ReplayDetected => write!(f, "Replay Attack Detected"),
+            ValidationError::AnomalyDetected(desc) => write!(f, "Anomaly Detected: {}", desc),
         }
     }
 }
@@ -82,6 +84,8 @@ pub struct AttackDetector {
     unsecured_frame_count: u32,
     /// Consecutive replay attack counter
     replay_error_count: u32,
+    /// Consecutive anomaly counter
+    anomaly_count: u32,
     /// Total CRC errors encountered
     total_crc_errors: u64,
     /// Total MAC errors encountered
@@ -92,6 +96,8 @@ pub struct AttackDetector {
     total_replay_attacks: u64,
     /// Total unauthorized access attempts
     total_unauthorized_access: u64,
+    /// Total anomalies detected
+    total_anomalies: u64,
     /// Total frames successfully validated
     total_valid_frames: u64,
     /// Current security state
@@ -109,11 +115,13 @@ impl AttackDetector {
             mac_error_count: 0,
             unsecured_frame_count: 0,
             replay_error_count: 0,
+            anomaly_count: 0,
             total_crc_errors: 0,
             total_mac_errors: 0,
             total_unsecured_frames: 0,
             total_replay_attacks: 0,
             total_unauthorized_access: 0,
+            total_anomalies: 0,
             total_valid_frames: 0,
             state: SecurityState::Normal,
             security_logger: None,
@@ -131,11 +139,13 @@ impl AttackDetector {
             mac_error_count: 0,
             unsecured_frame_count: 0,
             replay_error_count: 0,
+            anomaly_count: 0,
             total_crc_errors: 0,
             total_mac_errors: 0,
             total_unsecured_frames: 0,
             total_replay_attacks: 0,
             total_unauthorized_access: 0,
+            total_anomalies: 0,
             total_valid_frames: 0,
             state: SecurityState::Normal,
             security_logger: Some(logger),
@@ -311,6 +321,37 @@ impl AttackDetector {
                 self.total_unauthorized_access += 1;
                 return false; // Always reject unauthorized access
             }
+            ValidationError::AnomalyDetected(description) => {
+                self.anomaly_count += 1;
+                self.total_anomalies += 1;
+
+                println!(
+                    "{} {} from {} | Anomaly #{} (Total: {})",
+                    "⚠️".yellow(),
+                    "ANOMALY DETECTED".yellow().bold(),
+                    source.bright_black(),
+                    self.anomaly_count,
+                    self.total_anomalies
+                );
+                println!("   • {}", description);
+
+                // Log anomaly
+                if let Some(logger) = &self.security_logger {
+                    logger.log_verification_failure(
+                        source.to_string(),
+                        0, // CAN ID not available here
+                        format!("ANOMALY: {}", description),
+                        self.anomaly_count,
+                    );
+                }
+
+                // Anomaly threshold is 1 for high-severity anomalies
+                // (severity is already filtered by caller - only Medium/High sent here)
+                if self.anomaly_count >= 1 {
+                    self.trigger_attack_mode(ValidationError::AnomalyDetected(description.clone()));
+                    return false; // Reject frame
+                }
+            }
         }
 
         // Allow recovery for errors below threshold
@@ -323,7 +364,8 @@ impl AttackDetector {
         let had_errors = self.crc_error_count > 0
             || self.mac_error_count > 0
             || self.unsecured_frame_count > 0
-            || self.replay_error_count > 0;
+            || self.replay_error_count > 0
+            || self.anomaly_count > 0;
 
         if had_errors && self.state != SecurityState::UnderAttack {
             println!(
@@ -337,6 +379,7 @@ impl AttackDetector {
         self.mac_error_count = 0;
         self.unsecured_frame_count = 0;
         self.replay_error_count = 0;
+        self.anomaly_count = 0;
 
         // Return to normal if we were in warning state
         let old_state = self.state;
@@ -393,6 +436,12 @@ impl AttackDetector {
                     1, // Always immediate
                     self.total_unauthorized_access,
                     1, // Immediate threshold
+                ),
+                ValidationError::AnomalyDetected(ref desc) => (
+                    format!("ANOMALY: {}", desc),
+                    self.anomaly_count,
+                    self.total_anomalies,
+                    1, // Immediate threshold for high-severity anomalies
                 ),
             };
 
@@ -495,6 +544,23 @@ impl AttackDetector {
                 println!("   • This indicates compromised or rogue ECU");
                 println!("   • Access control whitelist violated");
             }
+            ValidationError::AnomalyDetected(ref description) => {
+                println!(
+                    "{} Anomaly detections: {} (Threshold: 1)",
+                    "→".red(),
+                    self.anomaly_count.to_string().red().bold()
+                );
+                println!("{} Total anomalies: {}", "→".red(), self.total_anomalies);
+                println!();
+                println!(
+                    "{} {}",
+                    "→".red(),
+                    "ATTACK TYPE: Behavioral Anomaly".red().bold()
+                );
+                println!("   • {}", description);
+                println!("   • Deviation from statistical baseline profile");
+                println!("   • Indicates abnormal ECU behavior or attack");
+            }
         }
 
         println!();
@@ -529,11 +595,13 @@ impl AttackDetector {
             mac_error_count: self.mac_error_count,
             unsecured_frame_count: self.unsecured_frame_count,
             replay_error_count: self.replay_error_count,
+            anomaly_count: self.anomaly_count,
             total_crc_errors: self.total_crc_errors,
             total_mac_errors: self.total_mac_errors,
             total_unsecured_frames: self.total_unsecured_frames,
             total_replay_attacks: self.total_replay_attacks,
             total_unauthorized_access: self.total_unauthorized_access,
+            total_anomalies: self.total_anomalies,
             total_valid_frames: self.total_valid_frames,
             state: self.state,
         }
@@ -562,6 +630,7 @@ impl AttackDetector {
         self.mac_error_count = 0;
         self.unsecured_frame_count = 0;
         self.replay_error_count = 0;
+        self.anomaly_count = 0;
         self.state = SecurityState::Normal;
     }
 
@@ -656,11 +725,13 @@ pub struct AttackDetectorStats {
     pub mac_error_count: u32,
     pub unsecured_frame_count: u32,
     pub replay_error_count: u32,
+    pub anomaly_count: u32,
     pub total_crc_errors: u64,
     pub total_mac_errors: u64,
     pub total_unsecured_frames: u64,
     pub total_replay_attacks: u64,
     pub total_unauthorized_access: u64,
+    pub total_anomalies: u64,
     pub total_valid_frames: u64,
     pub state: SecurityState,
 }
@@ -669,7 +740,7 @@ impl fmt::Display for AttackDetectorStats {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "State: {} | CRC: {}/{} (Total: {}) | MAC: {}/{} (Total: {}) | Unsecured: {}/{} (Total: {}) | Replay: {}/{} (Total: {}) | Valid: {}",
+            "State: {} | CRC: {}/{} (Total: {}) | MAC: {}/{} (Total: {}) | Unsecured: {}/{} (Total: {}) | Replay: {}/{} (Total: {}) | Anomaly: {} (Total: {}) | Valid: {}",
             self.state,
             self.crc_error_count,
             CRC_ERROR_THRESHOLD,
@@ -683,6 +754,8 @@ impl fmt::Display for AttackDetectorStats {
             self.replay_error_count,
             REPLAY_ERROR_THRESHOLD,
             self.total_replay_attacks,
+            self.anomaly_count,
+            self.total_anomalies,
             self.total_valid_frames
         )
     }

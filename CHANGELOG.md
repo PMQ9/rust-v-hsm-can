@@ -2,6 +2,26 @@
 
 ## 2025-11-14
 
+### Bug Fix: Interval Anomaly Detection
+- Fixed interval anomaly detection not working after loading baselines from disk
+- Added runtime interval_trackers HashMap to maintain last-seen timestamps during detection
+- Interval detection now properly works alongside rate, data range, source, and CAN ID anomaly detection
+- Added baseline JSON files to .gitignore for security (deployment artifacts, not source code)
+
+### Anomaly-Based IDS with Statistical Baseline Profiling
+- Implemented behavioral anomaly detection using statistical profiling (no ML, simple statistics)
+- Factory calibration mode: Collect CAN traffic to establish normal behavior baseline
+- Profiles message frequency, data ranges, source ECUs, and temporal patterns per CAN ID
+- Graduated response: < 80% allow, 80-99% warn (1.3σ), >99% attack (3σ)
+- Secure baseline storage with HSM signature verification (prevents tampering)
+- Integration with VirtualHSM as central security processing unit
+- Anomaly detection in brake_controller, steering_controller, autonomous_controller ECUs
+- Detects: unknown CAN IDs, unexpected sources, data range anomalies, rate anomalies
+- Added calibration binary (calibrate_anomaly_baseline) for baseline generation
+- Added 9 unit tests for anomaly detection logic
+- Added 3 regression tests: full lifecycle, persistence, tamper detection
+- Baseline persistence with SHA256 fingerprinting and HMAC-SHA256 signing
+
 ### Rate Limiting and DoS Prevention
 - Implemented per-ECU rate limiting with token bucket algorithm (200 msg burst, 100 msg/sec sustained)
 - Bus servers drop frames exceeding rate limits and log throttling warnings
