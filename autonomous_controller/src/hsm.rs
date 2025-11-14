@@ -656,13 +656,12 @@ impl VirtualHSM {
             .or_insert_with(|| ReplayProtectionState::new(&self.replay_config));
 
         // Check 1: Strict monotonic (if enabled)
-        if self.replay_config.strict_monotonic
-            && session_counter <= state.last_accepted_counter {
-                return Err(ReplayError::CounterNotIncreasing {
-                    received: session_counter,
-                    expected_min: state.last_accepted_counter + 1,
-                });
-            }
+        if self.replay_config.strict_monotonic && session_counter <= state.last_accepted_counter {
+            return Err(ReplayError::CounterNotIncreasing {
+                received: session_counter,
+                expected_min: state.last_accepted_counter + 1,
+            });
+        }
 
         // Check 2: Sliding window check (counter already seen)
         if state.accepted_window.contains(&session_counter) {
@@ -687,25 +686,26 @@ impl VirtualHSM {
 
         // Check 4: Timestamp validation (if enabled)
         if self.replay_config.max_frame_age_secs > 0
-            && let Some(last_timestamp) = state.last_frame_timestamp {
-                let time_diff = frame_timestamp.signed_duration_since(last_timestamp);
+            && let Some(last_timestamp) = state.last_frame_timestamp
+        {
+            let time_diff = frame_timestamp.signed_duration_since(last_timestamp);
 
-                // Frame is too old
-                if time_diff.num_seconds() < -(self.replay_config.max_frame_age_secs as i64) {
-                    return Err(ReplayError::TimestampTooOld {
-                        frame_time: frame_timestamp,
-                        current_time: Utc::now(),
-                    });
-                }
-
-                // Frame is too far in the future (clock skew attack)
-                if time_diff.num_seconds() > self.replay_config.max_frame_age_secs as i64 {
-                    return Err(ReplayError::TimestampTooFarInFuture {
-                        frame_time: frame_timestamp,
-                        current_time: Utc::now(),
-                    });
-                }
+            // Frame is too old
+            if time_diff.num_seconds() < -(self.replay_config.max_frame_age_secs as i64) {
+                return Err(ReplayError::TimestampTooOld {
+                    frame_time: frame_timestamp,
+                    current_time: Utc::now(),
+                });
             }
+
+            // Frame is too far in the future (clock skew attack)
+            if time_diff.num_seconds() > self.replay_config.max_frame_age_secs as i64 {
+                return Err(ReplayError::TimestampTooFarInFuture {
+                    frame_time: frame_timestamp,
+                    current_time: Utc::now(),
+                });
+            }
+        }
 
         // All checks passed - accept the counter
         state.accept_counter(session_counter, frame_timestamp);

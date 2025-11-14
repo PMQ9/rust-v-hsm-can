@@ -4,7 +4,6 @@
 /// - Legitimate frames should be accepted
 /// - Replayed frames should be detected and rejected
 /// - Replay detection should trigger attack mode
-
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};

@@ -130,6 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!();
 
     let mut replay_count = 0;
+    let max_replays = 100;
 
     while let Some(frame) = captured_frames.pop_front() {
         // Replay the frame with attacker's identity
@@ -145,15 +146,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             frame.source.bright_black()
         );
 
-        // Add captured frame back to queue for continuous replay
-        captured_frames.push_back(frame);
-
         tokio::time::sleep(Duration::from_millis(100)).await;
 
-        if replay_count >= 100 {
-            // Rotate to beginning
-            replay_count = 0;
+        // Exit after max replays to allow automated tests to complete
+        if replay_count >= max_replays {
+            break;
         }
+
+        // Add captured frame back to queue for continuous replay
+        captured_frames.push_back(frame);
     }
 
     Ok(())
