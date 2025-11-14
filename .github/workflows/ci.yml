@@ -46,10 +46,13 @@ jobs:
       run: cargo test --workspace --lib --verbose
 
     - name: Run injection attack regression tests
-      run: cargo test --test attack_regression_tests -- --ignored --test-threads=1 --nocapture
+      run: cargo test --package rust-v-hsm-can --test attack_regression_tests -- --ignored --test-threads=1 --nocapture
 
     - name: Run access control regression tests
-      run: cargo test --test access_control_regression_tests -- --ignored --test-threads=1 --nocapture
+      run: cargo test --package rust-v-hsm-can --test access_control_regression_tests -- --ignored --test-threads=1 --nocapture
 
     - name: Run replay protection regression tests
-      run: cargo test --test replay_protection_regression_tests -- --ignored --test-threads=1 --nocapture
+      run: cargo test --package rust-v-hsm-can --test replay_protection_regression_tests -- --ignored --test-threads=1 --nocapture
+
+    - name: Run anomaly IDS regression tests
+      run: cargo test --package autonomous_vehicle_sim --test anomaly_ids_regression_tests -- --ignored --test-threads=1 --nocapture

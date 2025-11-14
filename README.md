@@ -202,7 +202,7 @@ See [tests/README.md](tests/README.md) for details.
 
 **Phase 2 - Detection:**
 - [x] Rate limiting and DoS prevention (per-ECU throttling)
-- [ ] Anomaly-based IDS (statistical baseline profiling)
+- [x] Anomaly-based IDS (statistical baseline profiling)
 - [ ] Attack simulation framework (fuzzing, injection, replay)
 
 **Phase 3 - Architecture:**

@@ -302,10 +302,11 @@ cargo build --verbose
 # 4. Unit tests
 cargo test --workspace --lib --verbose
 
-# 5. Regression tests (run all three)
-cargo test --test attack_regression_tests -- --ignored --test-threads=1 --nocapture
-cargo test --test access_control_regression_tests -- --ignored --test-threads=1 --nocapture
-cargo test --test replay_protection_regression_tests -- --ignored --test-threads=1 --nocapture
+# 5. Regression tests (run all four)
+cargo test --package rust-v-hsm-can --test attack_regression_tests -- --ignored --test-threads=1 --nocapture
+cargo test --package rust-v-hsm-can --test access_control_regression_tests -- --ignored --test-threads=1 --nocapture
+cargo test --package rust-v-hsm-can --test replay_protection_regression_tests -- --ignored --test-threads=1 --nocapture
+cargo test --package autonomous_vehicle_sim --test anomaly_ids_regression_tests -- --ignored --test-threads=1 --nocapture
 ```
 
 **DO NOT** consider your work complete until all CI tests pass. If any test fails, fix it before moving on.
