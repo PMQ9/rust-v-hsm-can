@@ -1,5 +1,16 @@
 # Changelog
 
+## 2025-11-14
+
+### Enhanced Replay Protection (ISO 21434 Compliance)
+- Implemented sliding window tracking (100 counters per ECU) with timestamp validation
+- 5 replay detection types: duplicate counter, too old, non-increasing, timestamp attacks
+- Per-ECU replay state with configurable strictness (lenient/balanced/strict modes)
+- Immediate attack mode triggering on replay detection (REPLAY_ERROR_THRESHOLD = 1)
+- Added 10 unit tests covering all replay scenarios and end-to-end detection
+- Added regression test for replay attack detection
+- Integrated with AttackDetector for comprehensive threat response
+
 ## 2025-11-13
 
 ### CAN ID Access Control (ISO 21434 Compliance)

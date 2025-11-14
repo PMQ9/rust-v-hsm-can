@@ -198,7 +198,7 @@ See [tests/README.md](tests/README.md) for details.
 **Phase 1 - Foundation:**
 - [x] Security event logging (tamper-resistant audit trail)
 - [x] CAN ID access control whitelist (authorization model)
-- [ ] Enhanced replay protection (sliding window + timestamps)
+- [x] Enhanced replay protection (sliding window + timestamps)
 
 **Phase 2 - Detection:**
 - [ ] Rate limiting and DoS prevention (per-ECU throttling)
