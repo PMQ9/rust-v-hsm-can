@@ -5,6 +5,7 @@ pub mod error_handling;
 pub mod hsm;
 pub mod network;
 pub mod protected_memory;
+pub mod rate_limiter;
 pub mod security_log;
 pub mod types;
 
@@ -15,5 +16,6 @@ pub use error_handling::{AttackDetector, SecurityState, ValidationError};
 pub use hsm::{SecuredCanFrame, SignedFirmware, VirtualHSM};
 pub use network::{BusClient, BusReader, BusWriter, NetMessage};
 pub use protected_memory::{FirmwareInfo, ProtectedMemory};
+pub use rate_limiter::RateLimiter;
 pub use security_log::{SecurityEvent, SecurityLogger};
 pub use types::{ArmVariant, CanFrame, CanId, CanIdPermissions, EcuConfig, VehicleState};
