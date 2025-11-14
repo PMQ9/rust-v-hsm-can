@@ -2,6 +2,13 @@
 
 ## 2025-11-14
 
+### Rate Limiting and DoS Prevention
+- Implemented per-ECU rate limiting with token bucket algorithm (200 msg burst, 100 msg/sec sustained)
+- Bus servers drop frames exceeding rate limits and log throttling warnings
+- Per-ECU token buckets prevent individual ECU from flooding CAN bus
+- Added rate_limiter module with comprehensive unit tests (burst, refill, isolation, reset)
+- Integrated into both autonomous_controller and basic bus servers
+
 ### Test Fixes and CI Improvements
 - Fixed infinite loop in attack_replay test binary (added max replay limit)
 - Fixed attack_replay to send SecuredCanFrame instead of CanFrame for proper replay detection

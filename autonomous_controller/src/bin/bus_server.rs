@@ -1,5 +1,6 @@
 use autonomous_vehicle_sim::hsm::SecuredCanFrame;
 use autonomous_vehicle_sim::network::NetMessage;
+use autonomous_vehicle_sim::rate_limiter::RateLimiter;
 use colored::*;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -46,6 +47,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create client map
     let clients: ClientMap = Arc::new(Mutex::new(HashMap::new()));
 
+    // Create rate limiter with automotive defaults (200 burst, 100 msg/sec sustained)
+    let rate_limiter = RateLimiter::with_automotive_defaults();
+    println!(
+        "{} Rate limiting enabled: 200 msg burst, 100 msg/sec sustained per ECU",
+        "ℹ".bright_blue()
+    );
+
     let listener = TcpListener::bind(BUS_ADDRESS).await?;
     println!(
         "{} Bus server ready! Waiting for ECU connections...",
@@ -68,10 +76,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let tx = Arc::clone(&tx);
         let clients = Arc::clone(&clients);
+        let rate_limiter = rate_limiter.clone();
 
         // Spawn a task to handle this client
         tokio::spawn(async move {
-            if let Err(e) = handle_client(socket, tx, clients).await {
+            if let Err(e) = handle_client(socket, tx, clients, rate_limiter).await {
                 eprintln!("{} Client error: {}", "✗".red(), e);
             }
         });
@@ -82,6 +91,7 @@ async fn handle_client(
     socket: TcpStream,
     tx: Arc<broadcast::Sender<NetMessage>>,
     clients: ClientMap,
+    rate_limiter: RateLimiter,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let peer_addr = socket.peer_addr()?;
     let (read_half, write_half) = socket.into_split();
@@ -166,6 +176,7 @@ async fn handle_client(
 
     // Read messages from the client
     let mut frame_count = 0;
+    let mut throttled_count = 0;
     loop {
         line.clear();
         let n = reader.read_line(&mut line).await?;
@@ -179,6 +190,18 @@ async fn handle_client(
 
         match msg {
             NetMessage::SecuredCanFrame(secured_frame) => {
+                // Rate limiting check
+                if !rate_limiter.allow_message(&client_name).await {
+                    throttled_count += 1;
+                    eprintln!(
+                        "{} Frame from {} THROTTLED (rate limit exceeded, {} total throttled)",
+                        "⚠".yellow().bold(),
+                        client_name.bright_cyan(),
+                        throttled_count
+                    );
+                    continue; // Drop the frame
+                }
+
                 frame_count += 1;
                 println!(
                     "  {} Frame #{:04} from {} - ID: 0x{:03X} (secured)",
@@ -195,6 +218,19 @@ async fn handle_client(
             }
             NetMessage::CanFrame(frame) => {
                 // Handle legacy unencrypted frames (for backwards compatibility)
+
+                // Rate limiting check
+                if !rate_limiter.allow_message(&client_name).await {
+                    throttled_count += 1;
+                    eprintln!(
+                        "{} Frame from {} THROTTLED (rate limit exceeded, {} total throttled)",
+                        "⚠".yellow().bold(),
+                        client_name.bright_cyan(),
+                        throttled_count
+                    );
+                    continue; // Drop the frame
+                }
+
                 frame_count += 1;
                 println!(
                     "  {} Frame #{:04} from {} - ID: 0x{:03X} (unsecured/legacy)",
@@ -240,12 +276,22 @@ async fn handle_client(
 
     // Client already removed from map (writer was moved to forwarding task)
 
-    println!(
-        "{} {} disconnected (sent {} frames)",
-        "→".bright_black(),
-        client_name.bright_black(),
-        frame_count
-    );
+    if throttled_count > 0 {
+        println!(
+            "{} {} disconnected (sent {} frames, {} throttled)",
+            "→".bright_black(),
+            client_name.bright_black(),
+            frame_count,
+            throttled_count
+        );
+    } else {
+        println!(
+            "{} {} disconnected (sent {} frames)",
+            "→".bright_black(),
+            client_name.bright_black(),
+            frame_count
+        );
+    }
 
     Ok(())
 }

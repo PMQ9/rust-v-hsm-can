@@ -201,7 +201,7 @@ See [tests/README.md](tests/README.md) for details.
 - [x] Enhanced replay protection (sliding window + timestamps)
 
 **Phase 2 - Detection:**
-- [ ] Rate limiting and DoS prevention (per-ECU throttling)
+- [x] Rate limiting and DoS prevention (per-ECU throttling)
 - [ ] Anomaly-based IDS (statistical baseline profiling)
 - [ ] Attack simulation framework (fuzzing, injection, replay)
 
