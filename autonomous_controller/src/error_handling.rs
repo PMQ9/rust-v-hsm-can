@@ -11,6 +11,7 @@ use std::fmt;
 pub const CRC_ERROR_THRESHOLD: u32 = 5; // Allow 5 consecutive CRC errors (noise tolerance)
 pub const MAC_ERROR_THRESHOLD: u32 = 3; // Allow 3 consecutive MAC errors (noise tolerance)
 pub const UNSECURED_FRAME_THRESHOLD: u32 = 1; // Immediately trigger on unsecured frames (no tolerance)
+pub const REPLAY_ERROR_THRESHOLD: u32 = 1; // Immediately trigger on replay attacks (no tolerance)
 
 /// Types of validation errors
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,6 +20,7 @@ pub enum ValidationError {
     MacMismatch,
     UnsecuredFrame,
     UnauthorizedAccess,
+    ReplayDetected,
 }
 
 impl ValidationError {
@@ -29,6 +31,7 @@ impl ValidationError {
             crate::hsm::VerifyError::CrcMismatch => ValidationError::CrcMismatch,
             crate::hsm::VerifyError::MacMismatch(_) => ValidationError::MacMismatch,
             crate::hsm::VerifyError::UnauthorizedAccess => ValidationError::UnauthorizedAccess,
+            crate::hsm::VerifyError::ReplayDetected(_) => ValidationError::ReplayDetected,
         }
     }
 }
@@ -40,6 +43,7 @@ impl fmt::Display for ValidationError {
             ValidationError::MacMismatch => write!(f, "MAC Mismatch"),
             ValidationError::UnsecuredFrame => write!(f, "Unsecured Frame (No MAC)"),
             ValidationError::UnauthorizedAccess => write!(f, "Unauthorized CAN ID Access"),
+            ValidationError::ReplayDetected => write!(f, "Replay Attack Detected"),
         }
     }
 }
@@ -76,12 +80,16 @@ pub struct AttackDetector {
     mac_error_count: u32,
     /// Consecutive unsecured frame counter
     unsecured_frame_count: u32,
+    /// Consecutive replay attack counter
+    replay_error_count: u32,
     /// Total CRC errors encountered
     total_crc_errors: u64,
     /// Total MAC errors encountered
     total_mac_errors: u64,
     /// Total unsecured frames encountered
     total_unsecured_frames: u64,
+    /// Total replay attacks detected
+    total_replay_attacks: u64,
     /// Total unauthorized access attempts
     total_unauthorized_access: u64,
     /// Total frames successfully validated
@@ -100,9 +108,11 @@ impl AttackDetector {
             crc_error_count: 0,
             mac_error_count: 0,
             unsecured_frame_count: 0,
+            replay_error_count: 0,
             total_crc_errors: 0,
             total_mac_errors: 0,
             total_unsecured_frames: 0,
+            total_replay_attacks: 0,
             total_unauthorized_access: 0,
             total_valid_frames: 0,
             state: SecurityState::Normal,
@@ -120,9 +130,11 @@ impl AttackDetector {
             crc_error_count: 0,
             mac_error_count: 0,
             unsecured_frame_count: 0,
+            replay_error_count: 0,
             total_crc_errors: 0,
             total_mac_errors: 0,
             total_unsecured_frames: 0,
+            total_replay_attacks: 0,
             total_unauthorized_access: 0,
             total_valid_frames: 0,
             state: SecurityState::Normal,
@@ -264,6 +276,35 @@ impl AttackDetector {
                     return false; // Reject frame
                 }
             }
+            ValidationError::ReplayDetected => {
+                self.replay_error_count += 1;
+                self.total_replay_attacks += 1;
+
+                println!(
+                    "{} {} from {} | Replay Attack #{} (Total: {})",
+                    "⚠️".yellow(),
+                    "REPLAY ATTACK DETECTED".red().bold(),
+                    source.bright_black(),
+                    self.replay_error_count,
+                    self.total_replay_attacks
+                );
+
+                // Log verification failure
+                if let Some(logger) = &self.security_logger {
+                    logger.log_verification_failure(
+                        source.to_string(),
+                        0, // CAN ID not available here
+                        "REPLAY_ATTACK".to_string(),
+                        self.replay_error_count,
+                    );
+                }
+
+                // Replay attacks are IMMEDIATE attack indicators - trigger immediately
+                if self.replay_error_count >= REPLAY_ERROR_THRESHOLD {
+                    self.trigger_attack_mode(ValidationError::ReplayDetected);
+                    return false; // Reject frame
+                }
+            }
             ValidationError::UnauthorizedAccess => {
                 // Unauthorized access is handled separately via handle_unauthorized_access()
                 // This case shouldn't normally be reached via record_error
@@ -279,8 +320,10 @@ impl AttackDetector {
     /// Record a successful validation (resets consecutive error counters)
     pub fn record_success(&mut self) {
         // Reset consecutive error counters on successful validation
-        let had_errors =
-            self.crc_error_count > 0 || self.mac_error_count > 0 || self.unsecured_frame_count > 0;
+        let had_errors = self.crc_error_count > 0
+            || self.mac_error_count > 0
+            || self.unsecured_frame_count > 0
+            || self.replay_error_count > 0;
 
         if had_errors && self.state != SecurityState::UnderAttack {
             println!(
@@ -293,6 +336,7 @@ impl AttackDetector {
         self.crc_error_count = 0;
         self.mac_error_count = 0;
         self.unsecured_frame_count = 0;
+        self.replay_error_count = 0;
 
         // Return to normal if we were in warning state
         let old_state = self.state;
@@ -337,6 +381,12 @@ impl AttackDetector {
                     self.unsecured_frame_count,
                     self.total_unsecured_frames,
                     UNSECURED_FRAME_THRESHOLD,
+                ),
+                ValidationError::ReplayDetected => (
+                    "REPLAY_ATTACK".to_string(),
+                    self.replay_error_count,
+                    self.total_replay_attacks,
+                    REPLAY_ERROR_THRESHOLD,
                 ),
                 ValidationError::UnauthorizedAccess => (
                     "UNAUTHORIZED_ACCESS".to_string(),
@@ -407,6 +457,28 @@ impl AttackDetector {
                 println!("   • Attacker is sending frames without valid MAC");
                 println!("   • This indicates unauthorized ECU on the bus");
             }
+            ValidationError::ReplayDetected => {
+                println!(
+                    "{} Replay attacks detected: {} (Threshold: {})",
+                    "→".red(),
+                    self.replay_error_count.to_string().red().bold(),
+                    REPLAY_ERROR_THRESHOLD
+                );
+                println!(
+                    "{} Total replay attacks: {}",
+                    "→".red(),
+                    self.total_replay_attacks
+                );
+                println!();
+                println!(
+                    "{} {}",
+                    "→".red(),
+                    "ATTACK TYPE: Replay Attack".red().bold()
+                );
+                println!("   • Attacker is replaying captured CAN frames");
+                println!("   • Duplicate or out-of-sequence counter detected");
+                println!("   • This indicates frame capture and retransmission");
+            }
             ValidationError::UnauthorizedAccess => {
                 println!(
                     "{} Unauthorized access attempts: {}",
@@ -456,9 +528,11 @@ impl AttackDetector {
             crc_error_count: self.crc_error_count,
             mac_error_count: self.mac_error_count,
             unsecured_frame_count: self.unsecured_frame_count,
+            replay_error_count: self.replay_error_count,
             total_crc_errors: self.total_crc_errors,
             total_mac_errors: self.total_mac_errors,
             total_unsecured_frames: self.total_unsecured_frames,
+            total_replay_attacks: self.total_replay_attacks,
             total_unauthorized_access: self.total_unauthorized_access,
             total_valid_frames: self.total_valid_frames,
             state: self.state,
@@ -487,6 +561,7 @@ impl AttackDetector {
         self.crc_error_count = 0;
         self.mac_error_count = 0;
         self.unsecured_frame_count = 0;
+        self.replay_error_count = 0;
         self.state = SecurityState::Normal;
     }
 
@@ -580,9 +655,11 @@ pub struct AttackDetectorStats {
     pub crc_error_count: u32,
     pub mac_error_count: u32,
     pub unsecured_frame_count: u32,
+    pub replay_error_count: u32,
     pub total_crc_errors: u64,
     pub total_mac_errors: u64,
     pub total_unsecured_frames: u64,
+    pub total_replay_attacks: u64,
     pub total_unauthorized_access: u64,
     pub total_valid_frames: u64,
     pub state: SecurityState,
@@ -592,7 +669,7 @@ impl fmt::Display for AttackDetectorStats {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "State: {} | CRC: {}/{} (Total: {}) | MAC: {}/{} (Total: {}) | Unsecured: {}/{} (Total: {}) | Valid: {}",
+            "State: {} | CRC: {}/{} (Total: {}) | MAC: {}/{} (Total: {}) | Unsecured: {}/{} (Total: {}) | Replay: {}/{} (Total: {}) | Valid: {}",
             self.state,
             self.crc_error_count,
             CRC_ERROR_THRESHOLD,
@@ -603,6 +680,9 @@ impl fmt::Display for AttackDetectorStats {
             self.unsecured_frame_count,
             UNSECURED_FRAME_THRESHOLD,
             self.total_unsecured_frames,
+            self.replay_error_count,
+            REPLAY_ERROR_THRESHOLD,
+            self.total_replay_attacks,
             self.total_valid_frames
         )
     }

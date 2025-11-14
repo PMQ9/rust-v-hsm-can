@@ -1,10 +1,11 @@
+use chrono::{DateTime, Utc};
 use colored::*;
 use hmac::{Hmac, Mac};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -27,6 +28,81 @@ impl fmt::Display for MacFailureReason {
     }
 }
 
+/// Replay detection errors
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReplayError {
+    /// Counter was already seen in sliding window
+    CounterAlreadySeen { counter: u64 },
+
+    /// Counter is not increasing (strict mode)
+    CounterNotIncreasing { received: u64, expected_min: u64 },
+
+    /// Counter is too old (outside sliding window)
+    CounterTooOld { received: u64, min_acceptable: u64 },
+
+    /// Frame timestamp is too old
+    TimestampTooOld {
+        frame_time: DateTime<Utc>,
+        current_time: DateTime<Utc>,
+    },
+
+    /// Frame timestamp is too far in future (clock skew)
+    TimestampTooFarInFuture {
+        frame_time: DateTime<Utc>,
+        current_time: DateTime<Utc>,
+    },
+}
+
+impl fmt::Display for ReplayError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ReplayError::CounterAlreadySeen { counter } => {
+                write!(f, "Replay detected: counter {} already seen", counter)
+            }
+            ReplayError::CounterNotIncreasing {
+                received,
+                expected_min,
+            } => {
+                write!(
+                    f,
+                    "Counter not increasing: received {}, expected >= {}",
+                    received, expected_min
+                )
+            }
+            ReplayError::CounterTooOld {
+                received,
+                min_acceptable,
+            } => {
+                write!(
+                    f,
+                    "Counter too old: {}, minimum acceptable: {}",
+                    received, min_acceptable
+                )
+            }
+            ReplayError::TimestampTooOld {
+                frame_time,
+                current_time,
+            } => {
+                write!(
+                    f,
+                    "Frame timestamp too old: {:?} vs current: {:?}",
+                    frame_time, current_time
+                )
+            }
+            ReplayError::TimestampTooFarInFuture {
+                frame_time,
+                current_time,
+            } => {
+                write!(
+                    f,
+                    "Frame timestamp too far in future: {:?} vs current: {:?}",
+                    frame_time, current_time
+                )
+            }
+        }
+    }
+}
+
 /// Structured verification error types
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerifyError {
@@ -38,6 +114,8 @@ pub enum VerifyError {
     MacMismatch(MacFailureReason),
     /// Unauthorized CAN ID access - ECU not permitted to use this CAN ID
     UnauthorizedAccess,
+    /// Replay attack detected - frame counter invalid
+    ReplayDetected(ReplayError),
 }
 
 impl fmt::Display for VerifyError {
@@ -47,6 +125,7 @@ impl fmt::Display for VerifyError {
             VerifyError::CrcMismatch => write!(f, "CRC verification failed"),
             VerifyError::MacMismatch(reason) => write!(f, "MAC verification failed: {}", reason),
             VerifyError::UnauthorizedAccess => write!(f, "Unauthorized CAN ID access"),
+            VerifyError::ReplayDetected(reason) => write!(f, "Replay attack detected: {}", reason),
         }
     }
 }
@@ -210,6 +289,91 @@ pub struct PerformanceSnapshot {
     pub e2e_sample_count: u64,
 }
 
+/// Configuration for replay protection behavior
+#[derive(Debug, Clone)]
+pub struct ReplayProtectionConfig {
+    /// Size of sliding window (default: 100)
+    pub window_size: usize,
+
+    /// Allow out-of-order frame acceptance within window
+    pub allow_reordering: bool,
+
+    /// Maximum age for frames in seconds (0 = disabled)
+    pub max_frame_age_secs: u64,
+
+    /// Strict mode: reject any counter <= last_seen (default: false)
+    pub strict_monotonic: bool,
+}
+
+impl Default for ReplayProtectionConfig {
+    fn default() -> Self {
+        Self {
+            window_size: 100,
+            allow_reordering: true,
+            max_frame_age_secs: 60,
+            strict_monotonic: false,
+        }
+    }
+}
+
+/// Replay protection state for a single ECU
+#[derive(Debug, Clone)]
+pub struct ReplayProtectionState {
+    /// Last accepted counter from this ECU
+    last_accepted_counter: u64,
+
+    /// Sliding window of recently accepted counters (for out-of-order tolerance)
+    accepted_window: VecDeque<u64>,
+
+    /// Maximum window size
+    window_size: usize,
+
+    /// Timestamp of last accepted frame (for time-based validation)
+    last_frame_timestamp: Option<DateTime<Utc>>,
+
+    /// Allow out-of-order delivery within window (reserved for future use)
+    #[allow(dead_code)]
+    allow_reordering: bool,
+}
+
+impl ReplayProtectionState {
+    pub fn new(config: &ReplayProtectionConfig) -> Self {
+        Self {
+            last_accepted_counter: 0,
+            accepted_window: VecDeque::with_capacity(config.window_size),
+            window_size: config.window_size,
+            last_frame_timestamp: None,
+            allow_reordering: config.allow_reordering,
+        }
+    }
+
+    /// Mark a counter as accepted and update state
+    pub fn accept_counter(&mut self, counter: u64, timestamp: DateTime<Utc>) {
+        // Update last accepted counter if this is newer
+        if counter > self.last_accepted_counter {
+            self.last_accepted_counter = counter;
+        }
+
+        // Add to sliding window
+        self.accepted_window.push_back(counter);
+
+        // Maintain window size
+        while self.accepted_window.len() > self.window_size {
+            self.accepted_window.pop_front();
+        }
+
+        // Update timestamp
+        self.last_frame_timestamp = Some(timestamp);
+    }
+
+    /// Reset state (for testing or ECU reset scenarios)
+    pub fn reset(&mut self) {
+        self.last_accepted_counter = 0;
+        self.accepted_window.clear();
+        self.last_frame_timestamp = None;
+    }
+}
+
 /// Virtual Hardware Security Module
 /// Provides cryptographic key management and operations for secure CAN communication
 #[derive(Clone)]
@@ -252,6 +416,12 @@ pub struct VirtualHSM {
 
     /// CAN ID access control permissions
     can_id_permissions: Option<crate::types::CanIdPermissions>,
+
+    /// Replay protection state for each trusted ECU
+    replay_protection_state: HashMap<String, ReplayProtectionState>,
+
+    /// Replay protection configuration
+    replay_config: ReplayProtectionConfig,
 }
 
 impl VirtualHSM {
@@ -283,6 +453,8 @@ impl VirtualHSM {
                 None
             },
             can_id_permissions: None,
+            replay_protection_state: HashMap::new(),
+            replay_config: ReplayProtectionConfig::default(),
         };
 
         // Generate deterministic keys based on seed
@@ -467,6 +639,94 @@ impl VirtualHSM {
         }
 
         result
+    }
+
+    /// Check if a session counter from a source ECU should be accepted
+    /// Returns Ok(()) if counter is valid, Err with reason if replay detected
+    pub fn validate_counter(
+        &mut self,
+        session_counter: u64,
+        source_ecu: &str,
+        frame_timestamp: DateTime<Utc>,
+    ) -> Result<(), ReplayError> {
+        // Get or initialize replay state for this ECU
+        let state = self
+            .replay_protection_state
+            .entry(source_ecu.to_string())
+            .or_insert_with(|| ReplayProtectionState::new(&self.replay_config));
+
+        // Check 1: Strict monotonic (if enabled)
+        if self.replay_config.strict_monotonic
+            && session_counter <= state.last_accepted_counter {
+                return Err(ReplayError::CounterNotIncreasing {
+                    received: session_counter,
+                    expected_min: state.last_accepted_counter + 1,
+                });
+            }
+
+        // Check 2: Sliding window check (counter already seen)
+        if state.accepted_window.contains(&session_counter) {
+            return Err(ReplayError::CounterAlreadySeen {
+                counter: session_counter,
+            });
+        }
+
+        // Check 3: Counter within acceptable range (window)
+        if session_counter
+            < state
+                .last_accepted_counter
+                .saturating_sub(state.window_size as u64)
+        {
+            return Err(ReplayError::CounterTooOld {
+                received: session_counter,
+                min_acceptable: state
+                    .last_accepted_counter
+                    .saturating_sub(state.window_size as u64),
+            });
+        }
+
+        // Check 4: Timestamp validation (if enabled)
+        if self.replay_config.max_frame_age_secs > 0
+            && let Some(last_timestamp) = state.last_frame_timestamp {
+                let time_diff = frame_timestamp.signed_duration_since(last_timestamp);
+
+                // Frame is too old
+                if time_diff.num_seconds() < -(self.replay_config.max_frame_age_secs as i64) {
+                    return Err(ReplayError::TimestampTooOld {
+                        frame_time: frame_timestamp,
+                        current_time: Utc::now(),
+                    });
+                }
+
+                // Frame is too far in the future (clock skew attack)
+                if time_diff.num_seconds() > self.replay_config.max_frame_age_secs as i64 {
+                    return Err(ReplayError::TimestampTooFarInFuture {
+                        frame_time: frame_timestamp,
+                        current_time: Utc::now(),
+                    });
+                }
+            }
+
+        // All checks passed - accept the counter
+        state.accept_counter(session_counter, frame_timestamp);
+        Ok(())
+    }
+
+    /// Configure replay protection settings
+    pub fn set_replay_config(&mut self, config: ReplayProtectionConfig) {
+        self.replay_config = config;
+    }
+
+    /// Get current replay protection configuration
+    pub fn get_replay_config(&self) -> &ReplayProtectionConfig {
+        &self.replay_config
+    }
+
+    /// Reset replay protection state for a specific ECU (for testing)
+    pub fn reset_replay_state(&mut self, ecu_id: &str) {
+        if let Some(state) = self.replay_protection_state.get_mut(ecu_id) {
+            state.reset();
+        }
     }
 
     /// Calculate CRC32 checksum
@@ -749,7 +1009,7 @@ impl SecuredCanFrame {
     }
 
     /// Verify the frame's MAC and CRC
-    pub fn verify(&self, hsm: &VirtualHSM) -> Result<(), VerifyError> {
+    pub fn verify(&self, hsm: &mut VirtualHSM) -> Result<(), VerifyError> {
         let start = if hsm.is_performance_enabled() {
             Some(Instant::now())
         } else {
@@ -773,9 +1033,13 @@ impl SecuredCanFrame {
         }
 
         // Verify MAC (cryptographic check)
+        hsm.verify_mac(&verify_data, &self.mac, self.session_counter, &self.source)
+            .map_err(VerifyError::MacMismatch)?;
+
+        // Verify replay protection (check session counter)
         let result = hsm
-            .verify_mac(&verify_data, &self.mac, self.session_counter, &self.source)
-            .map_err(VerifyError::MacMismatch);
+            .validate_counter(self.session_counter, &self.source, self.timestamp)
+            .map_err(VerifyError::ReplayDetected);
 
         // Record performance metrics (only on success)
         if result.is_ok()
@@ -800,7 +1064,7 @@ impl SecuredCanFrame {
     }
 
     /// Verify the frame's MAC, CRC, and receive authorization
-    pub fn verify_with_authorization(&self, hsm: &VirtualHSM) -> Result<(), VerifyError> {
+    pub fn verify_with_authorization(&self, hsm: &mut VirtualHSM) -> Result<(), VerifyError> {
         // First check receive authorization
         if hsm.authorize_receive(self.can_id.value()).is_err() {
             return Err(VerifyError::UnauthorizedAccess);
@@ -1047,7 +1311,7 @@ mod tests {
         .unwrap();
 
         // Should verify successfully
-        assert!(frame.verify_with_authorization(&receiver_hsm).is_ok());
+        assert!(frame.verify_with_authorization(&mut receiver_hsm).is_ok());
 
         // Create frame with unauthorized CAN ID (for receiver)
         let unauthorized_frame = SecuredCanFrame::new(
@@ -1063,7 +1327,7 @@ mod tests {
         bad_frame.can_id = crate::types::CanId::Standard(0x200);
 
         // Should fail authorization check
-        let result = bad_frame.verify_with_authorization(&receiver_hsm);
+        let result = bad_frame.verify_with_authorization(&mut receiver_hsm);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), VerifyError::UnauthorizedAccess);
     }
@@ -1090,5 +1354,222 @@ mod tests {
 
         // Non-whitelisted RX IDs should be denied
         assert!(hsm.authorize_receive(0x302).is_err());
+    }
+
+    // Replay Protection Tests
+    #[test]
+    fn test_replay_detection_duplicate_counter() {
+        let mut hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+        let counter = 5;
+        let timestamp = Utc::now();
+
+        // First frame should succeed
+        assert!(hsm.validate_counter(counter, "ECU2", timestamp).is_ok());
+
+        // Replay with same counter should fail
+        let result = hsm.validate_counter(counter, "ECU2", timestamp);
+        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(ReplayError::CounterAlreadySeen { .. })
+        ));
+    }
+
+    #[test]
+    fn test_sliding_window_allows_reordering() {
+        let mut hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+        let timestamp = Utc::now();
+
+        // Accept counters in order: 1, 2, 3
+        assert!(hsm.validate_counter(1, "ECU2", timestamp).is_ok());
+        assert!(hsm.validate_counter(2, "ECU2", timestamp).is_ok());
+        assert!(hsm.validate_counter(3, "ECU2", timestamp).is_ok());
+
+        // Accept counter 5 (skipped 4)
+        assert!(hsm.validate_counter(5, "ECU2", timestamp).is_ok());
+
+        // Now accept counter 4 (out of order, but within window)
+        assert!(hsm.validate_counter(4, "ECU2", timestamp).is_ok());
+
+        // But replaying 4 again should fail
+        let result = hsm.validate_counter(4, "ECU2", timestamp);
+        assert!(matches!(
+            result,
+            Err(ReplayError::CounterAlreadySeen { .. })
+        ));
+    }
+
+    #[test]
+    fn test_counter_too_old_rejected() {
+        let mut hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+        hsm.replay_config.window_size = 10;
+        let timestamp = Utc::now();
+
+        // Accept counter 100
+        assert!(hsm.validate_counter(100, "ECU2", timestamp).is_ok());
+
+        // Counter 89 (100 - 11) is outside window, should fail
+        let result = hsm.validate_counter(89, "ECU2", timestamp);
+        assert!(matches!(result, Err(ReplayError::CounterTooOld { .. })));
+
+        // Counter 90 (100 - 10) is within window, should succeed
+        assert!(hsm.validate_counter(90, "ECU2", timestamp).is_ok());
+    }
+
+    #[test]
+    fn test_timestamp_validation() {
+        let mut hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+        hsm.replay_config.max_frame_age_secs = 30;
+
+        let now = Utc::now();
+
+        // Accept first frame
+        assert!(hsm.validate_counter(1, "ECU2", now).is_ok());
+
+        // Frame from 60 seconds ago should fail
+        let old_timestamp = now - chrono::Duration::seconds(60);
+        let result = hsm.validate_counter(2, "ECU2", old_timestamp);
+        assert!(matches!(result, Err(ReplayError::TimestampTooOld { .. })));
+
+        // Frame from 60 seconds in future should fail (clock skew attack)
+        let future_timestamp = now + chrono::Duration::seconds(60);
+        let result = hsm.validate_counter(3, "ECU2", future_timestamp);
+        assert!(matches!(
+            result,
+            Err(ReplayError::TimestampTooFarInFuture { .. })
+        ));
+    }
+
+    #[test]
+    fn test_strict_monotonic_mode() {
+        let mut hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+        hsm.replay_config.strict_monotonic = true;
+        let timestamp = Utc::now();
+
+        assert!(hsm.validate_counter(1, "ECU2", timestamp).is_ok());
+        assert!(hsm.validate_counter(2, "ECU2", timestamp).is_ok());
+
+        // In strict mode, going backwards fails even if not in window
+        let result = hsm.validate_counter(1, "ECU2", timestamp);
+        assert!(matches!(
+            result,
+            Err(ReplayError::CounterNotIncreasing { .. })
+        ));
+    }
+
+    #[test]
+    fn test_replay_protection_per_ecu() {
+        let mut hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+        let timestamp = Utc::now();
+
+        // Use counter 5 from ECU2
+        assert!(hsm.validate_counter(5, "ECU2", timestamp).is_ok());
+
+        // ECU3 can also use counter 5 (separate state)
+        assert!(hsm.validate_counter(5, "ECU3", timestamp).is_ok());
+
+        // But ECU2 cannot replay counter 5
+        let result = hsm.validate_counter(5, "ECU2", timestamp);
+        assert!(matches!(
+            result,
+            Err(ReplayError::CounterAlreadySeen { .. })
+        ));
+
+        // And ECU3 cannot replay counter 5
+        let result = hsm.validate_counter(5, "ECU3", timestamp);
+        assert!(matches!(
+            result,
+            Err(ReplayError::CounterAlreadySeen { .. })
+        ));
+    }
+
+    #[test]
+    fn test_reset_replay_state() {
+        let mut hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+        let timestamp = Utc::now();
+
+        // Use counter 5
+        assert!(hsm.validate_counter(5, "ECU2", timestamp).is_ok());
+
+        // Replay should fail
+        assert!(hsm.validate_counter(5, "ECU2", timestamp).is_err());
+
+        // Reset state
+        hsm.reset_replay_state("ECU2");
+
+        // Now counter 5 should work again
+        assert!(hsm.validate_counter(5, "ECU2", timestamp).is_ok());
+    }
+
+    #[test]
+    fn test_replay_config_modification() {
+        let mut hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+
+        // Default config
+        assert_eq!(hsm.get_replay_config().window_size, 100);
+        assert_eq!(hsm.get_replay_config().max_frame_age_secs, 60);
+        assert!(!hsm.get_replay_config().strict_monotonic);
+
+        // Modify config
+        let mut config = ReplayProtectionConfig::default();
+        config.window_size = 50;
+        config.strict_monotonic = true;
+        hsm.set_replay_config(config);
+
+        assert_eq!(hsm.get_replay_config().window_size, 50);
+        assert!(hsm.get_replay_config().strict_monotonic);
+    }
+
+    #[test]
+    fn test_end_to_end_replay_attack_detection() {
+        // Setup two ECUs with HSMs
+        let mut sender_hsm = VirtualHSM::new("Sender".to_string(), 12345);
+        let sender_key = *sender_hsm.get_symmetric_key();
+
+        let mut receiver_hsm = VirtualHSM::new("Receiver".to_string(), 67890);
+        receiver_hsm.add_trusted_ecu("Sender".to_string(), sender_key);
+
+        // Create a legitimate frame
+        let can_id = crate::types::CanId::Standard(0x100);
+        let data = vec![1, 2, 3, 4];
+        let frame = SecuredCanFrame::new(can_id, data, "Sender".to_string(), &mut sender_hsm)
+            .expect("Failed to create frame");
+
+        // First verification should succeed
+        assert!(frame.verify(&mut receiver_hsm).is_ok());
+
+        // Replay the same frame - should fail with replay error
+        let result = frame.verify(&mut receiver_hsm);
+        assert!(result.is_err());
+        assert!(matches!(result, Err(VerifyError::ReplayDetected(_))));
+    }
+
+    #[test]
+    fn test_window_size_enforcement() {
+        let mut hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+        hsm.replay_config.window_size = 5;
+        let timestamp = Utc::now();
+
+        // Fill window with 5 counters
+        for i in 1..=5 {
+            assert!(hsm.validate_counter(i, "ECU2", timestamp).is_ok());
+        }
+
+        // Add 6th counter
+        assert!(hsm.validate_counter(6, "ECU2", timestamp).is_ok());
+
+        // Now window contains [2, 3, 4, 5, 6] (counter 1 was pushed out)
+        // Counter 0 is too old (0 < 6 - 5 = 1)
+        let result = hsm.validate_counter(0, "ECU2", timestamp);
+        assert!(result.is_err());
+        assert!(matches!(result, Err(ReplayError::CounterTooOld { .. })));
+
+        // Counter 3 should fail (already in window)
+        let result = hsm.validate_counter(3, "ECU2", timestamp);
+        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(ReplayError::CounterAlreadySeen { .. })
+        ));
     }
 }

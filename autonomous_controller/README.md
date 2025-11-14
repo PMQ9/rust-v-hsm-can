@@ -90,6 +90,7 @@ A realistic CAN bus simulation for autonomous vehicle development and security r
 **All ECUs now use Virtual-HSM (Hardware Security Module) with:**
 - **MAC**: HMAC-SHA256 message authentication
 - **CRC**: CRC32 integrity verification
+- **Replay Protection**: Sliding window + timestamp validation (100-counter window, 60s max age)
 - **Secure Boot**: Firmware signature verification
 - **Protected Memory**: Simulated MPU-protected firmware storage
 

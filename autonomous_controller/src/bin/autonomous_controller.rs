@@ -132,7 +132,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let detector_clone = Arc::clone(&attack_detector);
 
     // Clone HSM for the receiver task
-    let hsm_clone = hsm.clone();
+    let mut hsm_clone = hsm.clone();
 
     // Spawn receiver task with MAC/CRC verification and attack detection
     tokio::spawn(async move {
@@ -156,7 +156,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     }
 
                     // Verify MAC and CRC
-                    match secured_frame.verify(&hsm_clone) {
+                    match secured_frame.verify(&mut hsm_clone) {
                         Ok(_) => {
                             // Successful verification - reset error counters
                             {
