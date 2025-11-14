@@ -10,12 +10,31 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  # Fast check - runs first, no build needed
+  format:
+    name: Format Check
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v3
-    
+
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        components: rustfmt
+        override: true
+
+    - name: Check formatting
+      run: cargo fmt -- --check
+
+  # Build and cache - other jobs depend on this
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
     - name: Install Rust toolchain
       uses: actions-rs/toolchain@v1
       with:
@@ -35,27 +54,95 @@ jobs:
     - name: Build
       run: cargo build --verbose
 
-    - name: Run tests
-      run: cargo test --verbose
+    - name: Build release (for regression tests)
+      run: cargo build --release --verbose
 
-    - name: Check formatting
-      run: |
-        rustup component add rustfmt
-        cargo fmt -- --check
+  # Linting - runs in parallel with tests
+  clippy:
+    name: Clippy Lint
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        components: clippy
+        override: true
+
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Run clippy
-      run: |
-        rustup component add clippy
-        cargo clippy -- -D warnings
+      run: cargo clippy -- -D warnings
 
-    - name: Run injection attack regression tests
-      run: |
-        cargo test --test attack_regression_tests -- --ignored --test-threads=1 --nocapture
+  # Unit tests - runs in parallel with clippy
+  test-unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+    - uses: actions/checkout@v3
 
-    - name: Run access control regression tests
-      run: |
-        cargo test --test access_control_regression_tests -- --ignored --test-threads=1 --nocapture
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
 
-    - name: Run replay protection regression tests
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Run library tests
+      run: cargo test --lib --verbose
+
+  # Regression tests - run in parallel using matrix strategy
+  test-regression:
+    name: Regression Tests (${{ matrix.test-suite }})
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        test-suite:
+          - attack_regression_tests
+          - access_control_regression_tests
+          - replay_protection_regression_tests
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Run ${{ matrix.test-suite }}
       run: |
-        cargo test --test replay_protection_regression_tests -- --ignored --test-threads=1 --nocapture
+        cargo test --test ${{ matrix.test-suite }} -- --ignored --test-threads=1 --nocapture

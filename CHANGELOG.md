@@ -4,6 +4,8 @@
 
 ### Test Fixes and CI Improvements
 - Fixed infinite loop in attack_replay test binary (added max replay limit)
+- Split CI pipeline into 6 parallel jobs: format check, build, clippy, unit tests, and 3 regression test suites
+- Optimized CI execution time with matrix strategy for regression tests
 
 ### Enhanced Replay Protection (ISO 21434 Compliance)
 - Implemented sliding window tracking (100 counters per ECU) with timestamp validation
