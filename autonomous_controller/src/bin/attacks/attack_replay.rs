@@ -1,5 +1,6 @@
+use autonomous_vehicle_sim::hsm::SecuredCanFrame;
 use autonomous_vehicle_sim::network::BusClient;
-use autonomous_vehicle_sim::types::{CanFrame, can_ids};
+use autonomous_vehicle_sim::types::can_ids;
 /// ATTACK SCENARIO: Replay Attack
 ///
 /// This script demonstrates a replay attack where an attacker captures
@@ -51,44 +52,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     );
     println!();
 
-    let mut captured_frames: VecDeque<CanFrame> = VecDeque::new();
+    let mut captured_frames: VecDeque<SecuredCanFrame> = VecDeque::new();
     let capture_start = tokio::time::Instant::now();
 
     while capture_start.elapsed().as_secs() < CAPTURE_DURATION_SEC {
         match tokio::time::timeout(Duration::from_millis(100), reader.receive_message()).await {
             Ok(Ok(msg)) => {
-                if let autonomous_vehicle_sim::network::NetMessage::CanFrame(frame) = msg {
-                    // Only capture brake commands
-                    if frame.id == can_ids::BRAKE_COMMAND {
-                        println!(
-                            "{} Captured brake command from {}",
-                            "📹".red(),
-                            frame.source.bright_black()
-                        );
-                        captured_frames.push_back(frame);
-
-                        if captured_frames.len() >= 50 {
-                            break; // Captured enough
-                        }
-                    }
-                } else if let autonomous_vehicle_sim::network::NetMessage::SecuredCanFrame(
-                    secured,
-                ) = msg
-                {
-                    // Convert secured frame to regular frame for replay
+                if let autonomous_vehicle_sim::network::NetMessage::SecuredCanFrame(secured) = msg {
+                    // Capture secured brake commands with their original counter/MAC
                     if secured.can_id == can_ids::BRAKE_COMMAND {
                         println!(
-                            "{} Captured secured brake command from {} {}",
+                            "{} Captured secured brake command from {} (counter: {})",
                             "📹".red(),
                             secured.source.bright_black(),
-                            "(MAC will be invalid)".yellow()
+                            secured.session_counter
                         );
-                        let frame = CanFrame::new(
-                            secured.can_id,
-                            secured.data.clone(),
-                            secured.source.clone(),
-                        );
-                        captured_frames.push_back(frame);
+                        captured_frames.push_back(secured);
 
                         if captured_frames.len() >= 50 {
                             break;
@@ -133,16 +112,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let max_replays = 100;
 
     while let Some(frame) = captured_frames.pop_front() {
-        // Replay the frame with attacker's identity
-        let replayed_frame = CanFrame::new(frame.id, frame.data.clone(), ATTACKER_NAME.to_string());
-
-        writer.send_frame(replayed_frame).await?;
+        // Replay the secured frame with its original counter and MAC
+        // This will trigger replay detection on the receiving ECU
+        writer.send_secured_frame(frame.clone()).await?;
 
         replay_count += 1;
         println!(
-            "{} Replayed frame #{} (originally from {})",
+            "{} Replayed secured frame #{} (counter: {}, from: {})",
             "⚡".red(),
             replay_count,
+            frame.session_counter,
             frame.source.bright_black()
         );
 

@@ -2,6 +2,9 @@
 
 ## 2025-11-14
 
+### Test Fixes and CI Improvements
+- Fixed infinite loop in attack_replay test binary (added max replay limit)
+
 ### Enhanced Replay Protection (ISO 21434 Compliance)
 - Implemented sliding window tracking (100 counters per ECU) with timestamp validation
 - 5 replay detection types: duplicate counter, too old, non-increasing, timestamp attacks
