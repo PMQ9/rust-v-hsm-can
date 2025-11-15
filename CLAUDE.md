@@ -186,7 +186,7 @@ Both projects support **two communication modes**:
 - Broadcasts `SecuredCanFrame` messages to all connected clients (supports legacy `CanFrame` with conversion)
 - **Flow**: Client sends secured frame → Server broadcasts to all clients (including monitor)
 
-### Error Handling ([src/error_handling.rs](src/error_handling.rs), [src/hsm.rs](src/hsm.rs))
+### Error Handling ([src/error_handling.rs](src/error_handling.rs), [src/hsm/](src/hsm/))
 
 **Structured Error Types**:
 - `VerifyError`: Type-safe verification errors (UnsecuredFrame, CrcMismatch, MacMismatch)

@@ -150,7 +150,7 @@ rust-v-hsm-can/
 │   │   ├── can_bus.rs         # Virtual CAN bus
 │   │   ├── ecu.rs             # ECU emulator
 │   │   ├── network.rs         # TCP networking
-│   │   ├── hsm.rs             # Virtual HSM with cryptography
+│   │   ├── hsm/               # Virtual HSM with cryptography (modular)
 │   │   ├── protected_memory.rs # Secure boot and memory
 │   │   └── bin/
 │   │       ├── bus_server.rs           # Bus server
