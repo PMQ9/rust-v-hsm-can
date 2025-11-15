@@ -760,3 +760,355 @@ impl fmt::Display for AttackDetectorStats {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========================================================================
+    // CRC Error Threshold Boundary Tests
+    // ========================================================================
+
+    #[test]
+    fn test_crc_errors_below_threshold() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // Add 4 CRC errors (below threshold of 5)
+        for _ in 0..4 {
+            let result = detector.record_error(ValidationError::CrcMismatch, "ATTACKER");
+            assert!(result); // Should allow recovery
+        }
+
+        let stats = detector.get_stats();
+        assert_eq!(stats.crc_error_count, 4);
+        assert_eq!(stats.state, SecurityState::Warning); // Should be in Warning, not UnderAttack
+    }
+
+    #[test]
+    fn test_crc_errors_at_threshold() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // Add exactly 5 CRC errors (at threshold)
+        for i in 0..5 {
+            let result = detector.record_error(ValidationError::CrcMismatch, "ATTACKER");
+            if i < 4 {
+                assert!(result); // First 4 should allow recovery
+            } else {
+                assert!(!result); // 5th should trigger attack mode and reject
+            }
+        }
+
+        let stats = detector.get_stats();
+        assert_eq!(stats.crc_error_count, 5);
+        assert_eq!(stats.state, SecurityState::UnderAttack); // Should trigger attack mode
+        assert!(!detector.should_accept_frames()); // Should reject all frames
+    }
+
+    #[test]
+    fn test_crc_errors_above_threshold() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // Add 6 CRC errors (above threshold)
+        for i in 0..6 {
+            let result = detector.record_error(ValidationError::CrcMismatch, "ATTACKER");
+            if i < 4 {
+                assert!(result); // First 4 should allow recovery
+            } else {
+                assert!(!result); // 5th and 6th should reject
+            }
+        }
+
+        let stats = detector.get_stats();
+        assert_eq!(stats.crc_error_count, 6);
+        assert_eq!(stats.state, SecurityState::UnderAttack);
+        assert!(!detector.should_accept_frames());
+    }
+
+    // ========================================================================
+    // MAC Error Threshold Boundary Tests
+    // ========================================================================
+
+    #[test]
+    fn test_mac_errors_below_threshold() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // Add 2 MAC errors (below threshold of 3)
+        for _ in 0..2 {
+            let result = detector.record_error(ValidationError::MacMismatch, "ATTACKER");
+            assert!(result); // Should allow recovery
+        }
+
+        let stats = detector.get_stats();
+        assert_eq!(stats.mac_error_count, 2);
+        assert_eq!(stats.state, SecurityState::Warning); // Should be in Warning
+    }
+
+    #[test]
+    fn test_mac_errors_at_threshold() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // Add exactly 3 MAC errors (at threshold)
+        for i in 0..3 {
+            let result = detector.record_error(ValidationError::MacMismatch, "ATTACKER");
+            if i < 2 {
+                assert!(result); // First 2 should allow recovery
+            } else {
+                assert!(!result); // 3rd should trigger attack mode and reject
+            }
+        }
+
+        let stats = detector.get_stats();
+        assert_eq!(stats.mac_error_count, 3);
+        assert_eq!(stats.state, SecurityState::UnderAttack); // Should trigger attack mode
+        assert!(!detector.should_accept_frames());
+    }
+
+    #[test]
+    fn test_mac_errors_above_threshold() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // Add 4 MAC errors (above threshold)
+        for i in 0..4 {
+            let result = detector.record_error(ValidationError::MacMismatch, "ATTACKER");
+            if i < 2 {
+                assert!(result); // First 2 should allow recovery
+            } else {
+                assert!(!result); // 3rd and 4th should reject
+            }
+        }
+
+        let stats = detector.get_stats();
+        assert_eq!(stats.mac_error_count, 4);
+        assert_eq!(stats.state, SecurityState::UnderAttack);
+    }
+
+    // ========================================================================
+    // Warning Threshold Tests (threshold / 2)
+    // ========================================================================
+
+    #[test]
+    fn test_crc_warning_threshold_below() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // Add 1 CRC error (below warning threshold of 5/2 = 2)
+        detector.record_error(ValidationError::CrcMismatch, "ATTACKER");
+
+        let stats = detector.get_stats();
+        assert_eq!(stats.crc_error_count, 1);
+        assert_eq!(stats.state, SecurityState::Normal); // Should still be Normal
+    }
+
+    #[test]
+    fn test_crc_warning_threshold_at_or_above() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // Add 2 CRC errors (>= warning threshold of 5/2 = 2)
+        detector.record_error(ValidationError::CrcMismatch, "ATTACKER");
+        detector.record_error(ValidationError::CrcMismatch, "ATTACKER");
+
+        let stats = detector.get_stats();
+        assert_eq!(stats.crc_error_count, 2);
+        assert_eq!(stats.state, SecurityState::Warning); // Should transition to Warning
+    }
+
+    #[test]
+    fn test_mac_warning_threshold_below() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // MAC warning threshold is 3/2 = 1 (integer division)
+        // With 0 errors, should be Normal
+        let stats = detector.get_stats();
+        assert_eq!(stats.mac_error_count, 0);
+        assert_eq!(stats.state, SecurityState::Normal); // Should be Normal
+    }
+
+    #[test]
+    fn test_mac_warning_threshold_at_or_above() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // Add 1 MAC error (>= warning threshold of 3/2 = 1)
+        detector.record_error(ValidationError::MacMismatch, "ATTACKER");
+
+        let stats = detector.get_stats();
+        assert_eq!(stats.mac_error_count, 1);
+        assert_eq!(stats.state, SecurityState::Warning); // Should transition to Warning
+    }
+
+    // ========================================================================
+    // Recovery Behavior Tests
+    // ========================================================================
+
+    #[test]
+    fn test_recovery_resets_consecutive_counters() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // Add 4 CRC errors (Warning state)
+        for _ in 0..4 {
+            detector.record_error(ValidationError::CrcMismatch, "ATTACKER");
+        }
+        assert_eq!(detector.state(), SecurityState::Warning);
+
+        // Record a successful validation
+        detector.record_success();
+
+        // Consecutive counters should be reset
+        let stats = detector.get_stats();
+        assert_eq!(stats.crc_error_count, 0); // Consecutive count reset
+        assert_eq!(stats.total_crc_errors, 4); // Total count preserved
+        assert_eq!(stats.state, SecurityState::Normal); // Back to Normal
+    }
+
+    #[test]
+    fn test_recovery_from_warning_to_normal() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // Trigger Warning state with MAC errors
+        detector.record_error(ValidationError::MacMismatch, "ATTACKER");
+        detector.record_error(ValidationError::MacMismatch, "ATTACKER");
+        assert_eq!(detector.state(), SecurityState::Warning);
+
+        // Record success
+        detector.record_success();
+
+        // Should return to Normal
+        assert_eq!(detector.state(), SecurityState::Normal);
+        assert_eq!(detector.get_stats().mac_error_count, 0);
+    }
+
+    #[test]
+    fn test_no_recovery_from_under_attack() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // Trigger UnderAttack state
+        for _ in 0..5 {
+            detector.record_error(ValidationError::CrcMismatch, "ATTACKER");
+        }
+        assert_eq!(detector.state(), SecurityState::UnderAttack);
+
+        // Try to recover with success
+        detector.record_success();
+
+        // Should remain in UnderAttack (requires manual reset)
+        assert_eq!(detector.state(), SecurityState::UnderAttack);
+        assert!(!detector.should_accept_frames());
+    }
+
+    #[test]
+    fn test_manual_reset_from_attack_state() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // Trigger UnderAttack state
+        for _ in 0..5 {
+            detector.record_error(ValidationError::CrcMismatch, "ATTACKER");
+        }
+        assert_eq!(detector.state(), SecurityState::UnderAttack);
+
+        // Manual reset
+        detector.reset();
+
+        // Should return to Normal
+        assert_eq!(detector.state(), SecurityState::Normal);
+        assert_eq!(detector.get_stats().crc_error_count, 0);
+        assert!(detector.should_accept_frames());
+    }
+
+    // ========================================================================
+    // Immediate Trigger Tests (Threshold = 1)
+    // ========================================================================
+
+    #[test]
+    fn test_unsecured_frame_immediate_trigger() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // Single unsecured frame should immediately trigger
+        let result = detector.record_error(ValidationError::UnsecuredFrame, "ATTACKER");
+
+        assert!(!result); // Should reject immediately
+        assert_eq!(detector.state(), SecurityState::UnderAttack);
+        assert_eq!(detector.get_stats().unsecured_frame_count, 1);
+    }
+
+    #[test]
+    fn test_replay_attack_immediate_trigger() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // Single replay attack should immediately trigger
+        let result = detector.record_error(ValidationError::ReplayDetected, "ATTACKER");
+
+        assert!(!result); // Should reject immediately
+        assert_eq!(detector.state(), SecurityState::UnderAttack);
+        assert_eq!(detector.get_stats().replay_error_count, 1);
+    }
+
+    // ========================================================================
+    // Mixed Error Type Tests
+    // ========================================================================
+
+    #[test]
+    fn test_mixed_errors_independent_counters() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // Add 1 CRC error (below warning threshold 5/2=2) and 0 MAC errors
+        detector.record_error(ValidationError::CrcMismatch, "ATTACKER");
+
+        let stats = detector.get_stats();
+        assert_eq!(stats.crc_error_count, 1);
+        assert_eq!(stats.mac_error_count, 0);
+        assert_eq!(stats.state, SecurityState::Normal); // Neither warning threshold reached
+    }
+
+    #[test]
+    fn test_success_resets_all_consecutive_counters() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // Add multiple error types
+        detector.record_error(ValidationError::CrcMismatch, "ATTACKER");
+        detector.record_error(ValidationError::CrcMismatch, "ATTACKER");
+        detector.record_error(ValidationError::MacMismatch, "ATTACKER");
+
+        // Record success
+        detector.record_success();
+
+        // All consecutive counters should be reset
+        let stats = detector.get_stats();
+        assert_eq!(stats.crc_error_count, 0);
+        assert_eq!(stats.mac_error_count, 0);
+        assert_eq!(stats.state, SecurityState::Normal);
+    }
+
+    // ========================================================================
+    // Total Counter Tests
+    // ========================================================================
+
+    #[test]
+    fn test_total_counters_persist_after_recovery() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // Add errors, recover, add more errors
+        for _ in 0..2 {
+            detector.record_error(ValidationError::CrcMismatch, "ATTACKER");
+        }
+        detector.record_success(); // Reset consecutive
+
+        for _ in 0..3 {
+            detector.record_error(ValidationError::CrcMismatch, "ATTACKER");
+        }
+
+        let stats = detector.get_stats();
+        assert_eq!(stats.crc_error_count, 3); // Current consecutive
+        assert_eq!(stats.total_crc_errors, 5); // Total across recovery
+    }
+
+    #[test]
+    fn test_valid_frame_counter_increments() {
+        let mut detector = AttackDetector::new("TEST_ECU".to_string());
+
+        // Record multiple successes
+        for _ in 0..10 {
+            detector.record_success();
+        }
+
+        let stats = detector.get_stats();
+        assert_eq!(stats.total_valid_frames, 10);
+    }
+}

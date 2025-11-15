@@ -859,4 +859,395 @@ mod tests {
         assert!(baseline.signature.is_some());
         assert_eq!(baseline.signature.unwrap()[0], 1);
     }
+
+    // ========================================================================
+    // Sigma Threshold Boundary Tests
+    // ========================================================================
+
+    #[test]
+    fn test_data_range_anomaly_below_warning_threshold() {
+        let mut detector = AnomalyDetector::new();
+        let mut baseline = AnomalyBaseline::new("TEST_ECU".to_string());
+
+        // Create profile with known statistics: mean=50, std_dev=10
+        let mut profile = CanIdProfile::new(0x100);
+        profile.expected_sources.insert("SENSOR".to_string());
+        profile.data_stats[0].mean = 50.0;
+        profile.data_stats[0].std_dev = 10.0;
+        profile.data_stats[0].min = 20;
+        profile.data_stats[0].max = 80;
+        baseline.profiles.insert(0x100, profile);
+
+        detector.load_baseline(baseline).unwrap();
+
+        // Test 1.2σ deviation (below warning threshold of 1.3σ)
+        // Value: 50 + (1.2 * 10) = 62
+        let frame = create_test_frame(0x100, vec![62, 0, 0], "SENSOR");
+        let result = detector.detect(&frame);
+
+        assert!(
+            matches!(result, AnomalyResult::Normal),
+            "1.2σ deviation should return Normal, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_data_range_anomaly_at_warning_threshold() {
+        let mut detector = AnomalyDetector::new();
+        let mut baseline = AnomalyBaseline::new("TEST_ECU".to_string());
+
+        // Create profile with known statistics: mean=50, std_dev=10
+        let mut profile = CanIdProfile::new(0x100);
+        profile.expected_sources.insert("SENSOR".to_string());
+        profile.data_stats[0].mean = 50.0;
+        profile.data_stats[0].std_dev = 10.0;
+        profile.data_stats[0].min = 20;
+        profile.data_stats[0].max = 80;
+        baseline.profiles.insert(0x100, profile);
+
+        detector.load_baseline(baseline).unwrap();
+
+        // Test exactly 1.3σ deviation (at warning threshold)
+        // Value: 50 + (1.3 * 10) = 63
+        let frame = create_test_frame(0x100, vec![63, 0, 0], "SENSOR");
+        let result = detector.detect(&frame);
+
+        assert!(
+            matches!(result, AnomalyResult::Warning(_)),
+            "1.3σ deviation should return Warning, got {:?}",
+            result
+        );
+
+        if let AnomalyResult::Warning(report) = result {
+            assert!(report.confidence_sigma >= 1.3);
+            assert!(report.confidence_sigma < 3.0);
+            assert_eq!(report.severity, AnomalySeverity::Medium);
+        }
+    }
+
+    #[test]
+    fn test_data_range_anomaly_between_thresholds() {
+        let mut detector = AnomalyDetector::new();
+        let mut baseline = AnomalyBaseline::new("TEST_ECU".to_string());
+
+        // Create profile with known statistics: mean=50, std_dev=10
+        let mut profile = CanIdProfile::new(0x100);
+        profile.expected_sources.insert("SENSOR".to_string());
+        profile.data_stats[0].mean = 50.0;
+        profile.data_stats[0].std_dev = 10.0;
+        profile.data_stats[0].min = 20;
+        profile.data_stats[0].max = 80;
+        baseline.profiles.insert(0x100, profile);
+
+        detector.load_baseline(baseline).unwrap();
+
+        // Test 2.0σ deviation (between warning 1.3σ and attack 3.0σ)
+        // Value: 50 + (2.0 * 10) = 70
+        let frame = create_test_frame(0x100, vec![70, 0, 0], "SENSOR");
+        let result = detector.detect(&frame);
+
+        assert!(
+            matches!(result, AnomalyResult::Warning(_)),
+            "2.0σ deviation should return Warning, got {:?}",
+            result
+        );
+
+        if let AnomalyResult::Warning(report) = result {
+            assert!(report.confidence_sigma >= 1.3);
+            assert!(report.confidence_sigma < 3.0);
+        }
+    }
+
+    #[test]
+    fn test_data_range_anomaly_just_below_attack_threshold() {
+        let mut detector = AnomalyDetector::new();
+        let mut baseline = AnomalyBaseline::new("TEST_ECU".to_string());
+
+        // Create profile with known statistics: mean=50, std_dev=10
+        let mut profile = CanIdProfile::new(0x100);
+        profile.expected_sources.insert("SENSOR".to_string());
+        profile.data_stats[0].mean = 50.0;
+        profile.data_stats[0].std_dev = 10.0;
+        profile.data_stats[0].min = 20;
+        profile.data_stats[0].max = 90;
+        baseline.profiles.insert(0x100, profile);
+
+        detector.load_baseline(baseline).unwrap();
+
+        // Test 2.9σ deviation (just below attack threshold of 3.0σ)
+        // Value: 50 + (2.9 * 10) = 79
+        let frame = create_test_frame(0x100, vec![79, 0, 0], "SENSOR");
+        let result = detector.detect(&frame);
+
+        assert!(
+            matches!(result, AnomalyResult::Warning(_)),
+            "2.9σ deviation should return Warning, got {:?}",
+            result
+        );
+
+        if let AnomalyResult::Warning(report) = result {
+            assert!(report.confidence_sigma >= 2.0);
+            assert!(report.confidence_sigma < 3.0);
+            assert_eq!(report.severity, AnomalySeverity::Medium);
+        }
+    }
+
+    #[test]
+    fn test_data_range_anomaly_at_attack_threshold() {
+        let mut detector = AnomalyDetector::new();
+        let mut baseline = AnomalyBaseline::new("TEST_ECU".to_string());
+
+        // Create profile with known statistics: mean=50, std_dev=10
+        let mut profile = CanIdProfile::new(0x100);
+        profile.expected_sources.insert("SENSOR".to_string());
+        profile.data_stats[0].mean = 50.0;
+        profile.data_stats[0].std_dev = 10.0;
+        profile.data_stats[0].min = 20;
+        profile.data_stats[0].max = 90;
+        baseline.profiles.insert(0x100, profile);
+
+        detector.load_baseline(baseline).unwrap();
+
+        // Test exactly 3.0σ deviation (at attack threshold)
+        // Value: 50 + (3.0 * 10) = 80
+        let frame = create_test_frame(0x100, vec![80, 0, 0], "SENSOR");
+        let result = detector.detect(&frame);
+
+        assert!(
+            matches!(result, AnomalyResult::Attack(_)),
+            "3.0σ deviation should return Attack, got {:?}",
+            result
+        );
+
+        if let AnomalyResult::Attack(report) = result {
+            assert!(report.confidence_sigma >= 3.0);
+            assert_eq!(report.severity, AnomalySeverity::High);
+        }
+    }
+
+    #[test]
+    fn test_data_range_anomaly_above_attack_threshold() {
+        let mut detector = AnomalyDetector::new();
+        let mut baseline = AnomalyBaseline::new("TEST_ECU".to_string());
+
+        // Create profile with known statistics: mean=50, std_dev=10
+        let mut profile = CanIdProfile::new(0x100);
+        profile.expected_sources.insert("SENSOR".to_string());
+        profile.data_stats[0].mean = 50.0;
+        profile.data_stats[0].std_dev = 10.0;
+        profile.data_stats[0].min = 0;
+        profile.data_stats[0].max = 100;
+        baseline.profiles.insert(0x100, profile);
+
+        detector.load_baseline(baseline).unwrap();
+
+        // Test 5.0σ deviation (well above attack threshold)
+        // Value: 50 + (5.0 * 10) = 100
+        let frame = create_test_frame(0x100, vec![100, 0, 0], "SENSOR");
+        let result = detector.detect(&frame);
+
+        assert!(
+            matches!(result, AnomalyResult::Attack(_)),
+            "5.0σ deviation should return Attack, got {:?}",
+            result
+        );
+
+        if let AnomalyResult::Attack(report) = result {
+            assert!(report.confidence_sigma >= 3.0);
+            assert_eq!(report.severity, AnomalySeverity::High);
+        }
+    }
+
+    #[test]
+    fn test_negative_deviation_below_warning_threshold() {
+        let mut detector = AnomalyDetector::new();
+        let mut baseline = AnomalyBaseline::new("TEST_ECU".to_string());
+
+        // Create profile with known statistics: mean=50, std_dev=10
+        let mut profile = CanIdProfile::new(0x100);
+        profile.expected_sources.insert("SENSOR".to_string());
+        profile.data_stats[0].mean = 50.0;
+        profile.data_stats[0].std_dev = 10.0;
+        profile.data_stats[0].min = 20;
+        profile.data_stats[0].max = 80;
+        baseline.profiles.insert(0x100, profile);
+
+        detector.load_baseline(baseline).unwrap();
+
+        // Test negative deviation: -1.2σ
+        // Value: 50 - (1.2 * 10) = 38
+        let frame = create_test_frame(0x100, vec![38, 0, 0], "SENSOR");
+        let result = detector.detect(&frame);
+
+        assert!(
+            matches!(result, AnomalyResult::Normal),
+            "Negative 1.2σ deviation should return Normal, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_negative_deviation_at_attack_threshold() {
+        let mut detector = AnomalyDetector::new();
+        let mut baseline = AnomalyBaseline::new("TEST_ECU".to_string());
+
+        // Create profile with known statistics: mean=50, std_dev=10
+        let mut profile = CanIdProfile::new(0x100);
+        profile.expected_sources.insert("SENSOR".to_string());
+        profile.data_stats[0].mean = 50.0;
+        profile.data_stats[0].std_dev = 10.0;
+        profile.data_stats[0].min = 10;
+        profile.data_stats[0].max = 90;
+        baseline.profiles.insert(0x100, profile);
+
+        detector.load_baseline(baseline).unwrap();
+
+        // Test negative deviation: -3.0σ
+        // Value: 50 - (3.0 * 10) = 20
+        let frame = create_test_frame(0x100, vec![20, 0, 0], "SENSOR");
+        let result = detector.detect(&frame);
+
+        assert!(
+            matches!(result, AnomalyResult::Attack(_)),
+            "Negative 3.0σ deviation should return Attack, got {:?}",
+            result
+        );
+
+        if let AnomalyResult::Attack(report) = result {
+            assert!(report.confidence_sigma >= 3.0);
+            assert_eq!(report.severity, AnomalySeverity::High);
+        }
+    }
+
+    // ========================================================================
+    // Custom Threshold Tests
+    // ========================================================================
+
+    #[test]
+    fn test_custom_warning_threshold() {
+        let mut detector = AnomalyDetector::new();
+        let mut baseline = AnomalyBaseline::new("TEST_ECU".to_string());
+
+        // Set custom thresholds
+        baseline.warning_threshold_sigma = 2.0; // Custom: 2σ for warning
+        baseline.detection_threshold_sigma = 4.0; // Custom: 4σ for attack
+
+        let mut profile = CanIdProfile::new(0x100);
+        profile.expected_sources.insert("SENSOR".to_string());
+        profile.data_stats[0].mean = 50.0;
+        profile.data_stats[0].std_dev = 10.0;
+        profile.data_stats[0].min = 10;
+        profile.data_stats[0].max = 100;
+        baseline.profiles.insert(0x100, profile);
+
+        detector.load_baseline(baseline).unwrap();
+
+        // Test at custom warning threshold (2.0σ)
+        // Value: 50 + (2.0 * 10) = 70
+        let frame = create_test_frame(0x100, vec![70, 0, 0], "SENSOR");
+        let result = detector.detect(&frame);
+
+        assert!(
+            matches!(result, AnomalyResult::Warning(_)),
+            "2.0σ deviation should trigger custom warning threshold"
+        );
+
+        // Test below custom attack threshold (3.5σ)
+        // Value: 50 + (3.5 * 10) = 85
+        let frame = create_test_frame(0x100, vec![85, 0, 0], "SENSOR");
+        let result = detector.detect(&frame);
+
+        assert!(
+            matches!(result, AnomalyResult::Warning(_)),
+            "3.5σ should still be warning with 4.0σ attack threshold"
+        );
+
+        // Test at custom attack threshold (4.0σ)
+        // Value: 50 + (4.0 * 10) = 90
+        let frame = create_test_frame(0x100, vec![90, 0, 0], "SENSOR");
+        let result = detector.detect(&frame);
+
+        assert!(
+            matches!(result, AnomalyResult::Attack(_)),
+            "4.0σ deviation should trigger custom attack threshold"
+        );
+    }
+
+    // ========================================================================
+    // Edge Case: Zero Standard Deviation
+    // ========================================================================
+
+    #[test]
+    fn test_zero_std_dev_no_false_positives() {
+        let mut detector = AnomalyDetector::new();
+        let mut baseline = AnomalyBaseline::new("TEST_ECU".to_string());
+
+        // Create profile with zero std_dev (constant value scenario)
+        let mut profile = CanIdProfile::new(0x100);
+        profile.expected_sources.insert("SENSOR".to_string());
+        profile.data_stats[0].mean = 50.0;
+        profile.data_stats[0].std_dev = 0.0; // No variance
+        profile.data_stats[0].min = 50;
+        profile.data_stats[0].max = 50;
+        baseline.profiles.insert(0x100, profile);
+
+        detector.load_baseline(baseline).unwrap();
+
+        // Same value should not trigger anomaly (avoid division by zero)
+        let frame = create_test_frame(0x100, vec![50, 0, 0], "SENSOR");
+        let result = detector.detect(&frame);
+
+        // Should not crash and should handle gracefully
+        // Implementation should skip sigma check when std_dev = 0
+        assert!(
+            matches!(result, AnomalyResult::Normal),
+            "Zero std_dev with matching value should return Normal"
+        );
+    }
+
+    // ========================================================================
+    // Multi-Byte Anomaly Detection
+    // ========================================================================
+
+    #[test]
+    fn test_anomaly_detection_on_second_byte() {
+        let mut detector = AnomalyDetector::new();
+        let mut baseline = AnomalyBaseline::new("TEST_ECU".to_string());
+
+        let mut profile = CanIdProfile::new(0x100);
+        profile.expected_sources.insert("SENSOR".to_string());
+
+        // First byte: normal range
+        profile.data_stats[0].mean = 50.0;
+        profile.data_stats[0].std_dev = 10.0;
+        profile.data_stats[0].min = 20;
+        profile.data_stats[0].max = 80;
+
+        // Second byte: tighter range
+        profile.data_stats[1].mean = 100.0;
+        profile.data_stats[1].std_dev = 5.0;
+        profile.data_stats[1].min = 90;
+        profile.data_stats[1].max = 110;
+
+        baseline.profiles.insert(0x100, profile);
+        detector.load_baseline(baseline).unwrap();
+
+        // First byte normal, second byte anomalous (3.2σ)
+        // Value: 100 + (3.2 * 5) = 116
+        let frame = create_test_frame(0x100, vec![50, 116, 0], "SENSOR");
+        let result = detector.detect(&frame);
+
+        assert!(
+            matches!(result, AnomalyResult::Attack(_)),
+            "Anomaly on second byte should be detected"
+        );
+
+        if let AnomalyResult::Attack(report) = result {
+            assert!(matches!(
+                report.anomaly_type,
+                AnomalyType::DataRangeAnomaly { byte_index: 1, .. }
+            ));
+        }
+    }
 }
