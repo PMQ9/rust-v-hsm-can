@@ -1711,4 +1711,297 @@ mod tests {
             Err(ReplayError::CounterAlreadySeen { .. })
         ));
     }
+
+    // ========================================================================
+    // Verification Error Tests
+    // ========================================================================
+
+    #[test]
+    fn test_crc_mismatch_detection() {
+        let mut sender_hsm = VirtualHSM::new("SENDER".to_string(), 12345);
+        let sender_key = *sender_hsm.get_symmetric_key();
+
+        let mut receiver_hsm = VirtualHSM::new("RECEIVER".to_string(), 67890);
+        receiver_hsm.add_trusted_ecu("SENDER".to_string(), sender_key);
+
+        // Create valid frame
+        let mut frame = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![1, 2, 3, 4],
+            "SENDER".to_string(),
+            &mut sender_hsm,
+        )
+        .unwrap();
+
+        // Corrupt the CRC by changing it
+        frame.crc = frame.crc.wrapping_add(1);
+
+        // Verification should fail with CrcMismatch
+        let result = frame.verify(&mut receiver_hsm);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), VerifyError::CrcMismatch);
+    }
+
+    #[test]
+    fn test_mac_no_key_registered() {
+        let mut sender_hsm = VirtualHSM::new("SENDER".to_string(), 12345);
+
+        // Receiver does NOT have sender's key registered
+        let mut receiver_hsm = VirtualHSM::new("RECEIVER".to_string(), 67890);
+        // Intentionally NOT calling: receiver_hsm.add_trusted_ecu("SENDER", ...)
+
+        let frame = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![1, 2, 3, 4],
+            "SENDER".to_string(),
+            &mut sender_hsm,
+        )
+        .unwrap();
+
+        // Verification should fail with MacMismatch(NoKeyRegistered)
+        let result = frame.verify(&mut receiver_hsm);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            VerifyError::MacMismatch(MacFailureReason::NoKeyRegistered)
+        );
+    }
+
+    #[test]
+    fn test_mac_crypto_failure() {
+        let mut sender_hsm = VirtualHSM::new("SENDER".to_string(), 12345);
+        let sender_key = *sender_hsm.get_symmetric_key();
+
+        let mut receiver_hsm = VirtualHSM::new("RECEIVER".to_string(), 67890);
+        receiver_hsm.add_trusted_ecu("SENDER".to_string(), sender_key);
+
+        // Create valid frame
+        let mut frame = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![1, 2, 3, 4],
+            "SENDER".to_string(),
+            &mut sender_hsm,
+        )
+        .unwrap();
+
+        // Corrupt the MAC by changing one byte
+        frame.mac[0] = frame.mac[0].wrapping_add(1);
+
+        // Verification should fail with MacMismatch(CryptoFailure)
+        let result = frame.verify(&mut receiver_hsm);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            VerifyError::MacMismatch(MacFailureReason::CryptoFailure)
+        );
+    }
+
+    #[test]
+    fn test_unsecured_frame_all_zeros() {
+        let mut hsm = VirtualHSM::new("RECEIVER".to_string(), 12345);
+
+        // Create frame with all-zero MAC and CRC (unsecured/injected frame)
+        let unsecured_frame = SecuredCanFrame {
+            can_id: crate::types::CanId::Standard(0x100),
+            data: vec![1, 2, 3, 4],
+            source: "ATTACKER".to_string(),
+            timestamp: chrono::Utc::now(),
+            mac: [0u8; 32], // All zeros - indicates no MAC
+            crc: 0,         // Zero CRC
+            session_counter: 0,
+        };
+
+        // Should detect as UnsecuredFrame
+        let result = unsecured_frame.verify(&mut hsm);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), VerifyError::UnsecuredFrame);
+    }
+
+    #[test]
+    fn test_crc_mismatch_with_valid_mac() {
+        // Test that CRC is checked first (fails fast before MAC check)
+        let mut sender_hsm = VirtualHSM::new("SENDER".to_string(), 12345);
+        let sender_key = *sender_hsm.get_symmetric_key();
+
+        let mut receiver_hsm = VirtualHSM::new("RECEIVER".to_string(), 67890);
+        receiver_hsm.add_trusted_ecu("SENDER".to_string(), sender_key);
+
+        let mut frame = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![5, 6, 7, 8],
+            "SENDER".to_string(),
+            &mut sender_hsm,
+        )
+        .unwrap();
+
+        // Corrupt CRC (MAC is still valid)
+        frame.crc = 0;
+
+        // Should fail with CRC error, not MAC error
+        let result = frame.verify(&mut receiver_hsm);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), VerifyError::CrcMismatch);
+    }
+
+    #[test]
+    fn test_data_corruption_detected_by_crc() {
+        let mut sender_hsm = VirtualHSM::new("SENDER".to_string(), 12345);
+        let sender_key = *sender_hsm.get_symmetric_key();
+
+        let mut receiver_hsm = VirtualHSM::new("RECEIVER".to_string(), 67890);
+        receiver_hsm.add_trusted_ecu("SENDER".to_string(), sender_key);
+
+        let mut frame = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![10, 20, 30, 40],
+            "SENDER".to_string(),
+            &mut sender_hsm,
+        )
+        .unwrap();
+
+        // Corrupt data (simulating transmission error)
+        frame.data[0] = 99;
+
+        // CRC should detect the corruption
+        let result = frame.verify(&mut receiver_hsm);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), VerifyError::CrcMismatch);
+    }
+
+    #[test]
+    fn test_tampered_can_id_detected_by_crc() {
+        let mut sender_hsm = VirtualHSM::new("SENDER".to_string(), 12345);
+        let sender_key = *sender_hsm.get_symmetric_key();
+
+        let mut receiver_hsm = VirtualHSM::new("RECEIVER".to_string(), 67890);
+        receiver_hsm.add_trusted_ecu("SENDER".to_string(), sender_key);
+
+        let mut frame = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![11, 22, 33, 44],
+            "SENDER".to_string(),
+            &mut sender_hsm,
+        )
+        .unwrap();
+
+        // Attacker changes CAN ID (trying to inject command on different ID)
+        frame.can_id = crate::types::CanId::Standard(0x300); // Changed from 0x100
+
+        // CRC should detect the tampering (CAN ID is included in CRC calculation)
+        let result = frame.verify(&mut receiver_hsm);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), VerifyError::CrcMismatch);
+    }
+
+    #[test]
+    fn test_tampered_source_detected_by_mac() {
+        let mut sender_hsm = VirtualHSM::new("SENDER".to_string(), 12345);
+        let sender_key = *sender_hsm.get_symmetric_key();
+
+        let mut receiver_hsm = VirtualHSM::new("RECEIVER".to_string(), 67890);
+        receiver_hsm.add_trusted_ecu("SENDER".to_string(), sender_key);
+        // Also register ATTACKER key (different from SENDER)
+        let mut attacker_hsm = VirtualHSM::new("ATTACKER".to_string(), 99999);
+        let attacker_key = *attacker_hsm.get_symmetric_key();
+        receiver_hsm.add_trusted_ecu("ATTACKER".to_string(), attacker_key);
+
+        let mut frame = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![55, 66, 77, 88],
+            "SENDER".to_string(),
+            &mut sender_hsm,
+        )
+        .unwrap();
+
+        // Attacker changes source field (spoofing)
+        frame.source = "ATTACKER".to_string();
+
+        // CRC will fail first (source is in CRC calculation)
+        let result = frame.verify(&mut receiver_hsm);
+        assert!(result.is_err());
+        // Could be CRC or MAC mismatch depending on implementation
+        assert!(matches!(
+            result.unwrap_err(),
+            VerifyError::CrcMismatch | VerifyError::MacMismatch(_)
+        ));
+    }
+
+    // ========================================================================
+    // Replay Window Boundary Tests
+    // ========================================================================
+
+    #[test]
+    fn test_counter_just_within_window() {
+        let mut hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+        hsm.replay_config.window_size = 10;
+        let timestamp = Utc::now();
+
+        // Accept counters 5, 10, 15
+        assert!(hsm.validate_counter(5, "ECU2", timestamp).is_ok());
+        assert!(hsm.validate_counter(10, "ECU2", timestamp).is_ok());
+        assert!(hsm.validate_counter(15, "ECU2", timestamp).is_ok());
+
+        // Counter within window should be accepted if not already seen
+        assert!(
+            hsm.validate_counter(6, "ECU2", timestamp).is_ok(),
+            "Counter 6 (within window) should be accepted"
+        );
+    }
+
+    #[test]
+    fn test_counter_just_outside_window() {
+        let mut hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+        hsm.replay_config.window_size = 10;
+        let timestamp = Utc::now();
+
+        // Accept counters to establish window
+        assert!(hsm.validate_counter(10, "ECU2", timestamp).is_ok());
+        assert!(hsm.validate_counter(20, "ECU2", timestamp).is_ok());
+
+        // Counter definitely too old
+        let result = hsm.validate_counter(9, "ECU2", timestamp);
+        assert!(result.is_err());
+        assert!(matches!(result, Err(ReplayError::CounterTooOld { .. })));
+    }
+
+    #[test]
+    fn test_large_window_size() {
+        let mut hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+        hsm.replay_config.window_size = 1000;
+        let timestamp = Utc::now();
+
+        // Accept counters 1, 500, 1000
+        assert!(hsm.validate_counter(1, "ECU2", timestamp).is_ok());
+        assert!(hsm.validate_counter(500, "ECU2", timestamp).is_ok());
+        assert!(hsm.validate_counter(1000, "ECU2", timestamp).is_ok());
+
+        // Counter 1 should still be in window and already seen
+        assert!(
+            hsm.validate_counter(1, "ECU2", timestamp).is_err(),
+            "Counter 1 should be rejected (already seen, still in large window)"
+        );
+    }
+
+    #[test]
+    fn test_counter_wraparound_u64() {
+        // Test behavior near u64::MAX (counter wraparound)
+        let mut hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+        hsm.replay_config.window_size = 10;
+        let timestamp = Utc::now();
+
+        // Accept counter near max value
+        let near_max = u64::MAX - 5;
+        assert!(hsm.validate_counter(near_max, "ECU2", timestamp).is_ok());
+
+        // Accept counter at max
+        assert!(hsm.validate_counter(u64::MAX, "ECU2", timestamp).is_ok());
+
+        // Old counter should be rejected (already seen)
+        let result = hsm.validate_counter(near_max, "ECU2", timestamp);
+        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(ReplayError::CounterAlreadySeen { .. })
+        ));
+    }
 }
