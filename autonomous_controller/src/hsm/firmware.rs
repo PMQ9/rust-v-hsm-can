@@ -54,3 +54,24 @@ impl SignedFirmware {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hsm::core::VirtualHSM;
+
+    #[test]
+    fn test_firmware_verification() {
+        let hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+        let firmware_data = b"firmware binary data";
+
+        let firmware = SignedFirmware::new(
+            firmware_data.to_vec(),
+            "1.0.0".to_string(),
+            "ECU1".to_string(),
+            &hsm,
+        );
+
+        assert!(firmware.verify(&hsm).is_ok());
+    }
+}

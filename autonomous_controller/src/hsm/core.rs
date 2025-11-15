@@ -591,3 +591,260 @@ impl VirtualHSM {
         self.anomaly_detector.as_ref().and_then(|d| d.baseline())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hsm::errors::VerifyError;
+    use crate::hsm::secured_frame::SecuredCanFrame;
+
+    #[test]
+    fn test_authorize_transmit_without_policy() {
+        let hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+        // Without a policy loaded, all transmissions should be allowed
+        assert!(hsm.authorize_transmit(0x100).is_ok());
+        assert!(hsm.authorize_transmit(0x200).is_ok());
+        assert!(hsm.authorize_transmit(0x300).is_ok());
+    }
+
+    #[test]
+    fn test_authorize_transmit_with_policy_allowed() {
+        let mut hsm = VirtualHSM::new("WHEEL_FL".to_string(), 12345);
+        let mut perms = crate::types::CanIdPermissions::new("WHEEL_FL".to_string());
+        perms.allow_tx(0x100);
+        perms.allow_tx(0x101);
+        hsm.load_access_control(perms);
+
+        // Should allow authorized CAN IDs
+        assert!(hsm.authorize_transmit(0x100).is_ok());
+        assert!(hsm.authorize_transmit(0x101).is_ok());
+    }
+
+    #[test]
+    fn test_authorize_transmit_with_policy_denied() {
+        let mut hsm = VirtualHSM::new("WHEEL_FL".to_string(), 12345);
+        let mut perms = crate::types::CanIdPermissions::new("WHEEL_FL".to_string());
+        perms.allow_tx(0x100);
+        hsm.load_access_control(perms);
+
+        // Should deny unauthorized CAN IDs
+        assert!(hsm.authorize_transmit(0x200).is_err());
+        assert!(hsm.authorize_transmit(0x300).is_err());
+
+        // Verify error message contains expected information
+        let err = hsm.authorize_transmit(0x200).unwrap_err();
+        assert!(err.contains("WHEEL_FL"));
+        assert!(err.contains("0x200"));
+        assert!(err.contains("not authorized"));
+    }
+
+    #[test]
+    fn test_authorize_receive_without_policy() {
+        let hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+        // Without a policy loaded, all receives should be allowed
+        assert!(hsm.authorize_receive(0x100).is_ok());
+        assert!(hsm.authorize_receive(0x200).is_ok());
+    }
+
+    #[test]
+    fn test_authorize_receive_with_no_rx_whitelist() {
+        let mut hsm = VirtualHSM::new("WHEEL_FL".to_string(), 12345);
+        let mut perms = crate::types::CanIdPermissions::new("WHEEL_FL".to_string());
+        perms.allow_tx(0x100); // Only TX whitelist, no RX whitelist
+        hsm.load_access_control(perms);
+
+        // Should allow all receives when RX whitelist is not set
+        assert!(hsm.authorize_receive(0x100).is_ok());
+        assert!(hsm.authorize_receive(0x200).is_ok());
+        assert!(hsm.authorize_receive(0x300).is_ok());
+    }
+
+    #[test]
+    fn test_authorize_receive_with_rx_whitelist() {
+        let mut hsm = VirtualHSM::new("ENGINE_ECU".to_string(), 12345);
+        let mut perms = crate::types::CanIdPermissions::new("ENGINE_ECU".to_string());
+        perms.allow_tx(0x110);
+        perms.allow_rx(0x301); // Only receive throttle commands
+        hsm.load_access_control(perms);
+
+        // Should allow authorized receives
+        assert!(hsm.authorize_receive(0x301).is_ok());
+
+        // Should deny unauthorized receives
+        assert!(hsm.authorize_receive(0x300).is_err());
+        assert!(hsm.authorize_receive(0x302).is_err());
+    }
+
+    #[test]
+    fn test_multiple_can_ids_in_whitelist() {
+        let mut hsm = VirtualHSM::new("ENGINE_ECU".to_string(), 12345);
+        let mut perms = crate::types::CanIdPermissions::new("ENGINE_ECU".to_string());
+        perms.allow_tx_multiple(&[0x110, 0x111, 0x112]);
+        perms.allow_rx_multiple(&[0x300, 0x301]);
+        hsm.load_access_control(perms);
+
+        // All whitelisted TX IDs should be allowed
+        assert!(hsm.authorize_transmit(0x110).is_ok());
+        assert!(hsm.authorize_transmit(0x111).is_ok());
+        assert!(hsm.authorize_transmit(0x112).is_ok());
+
+        // Non-whitelisted TX IDs should be denied
+        assert!(hsm.authorize_transmit(0x113).is_err());
+
+        // All whitelisted RX IDs should be allowed
+        assert!(hsm.authorize_receive(0x300).is_ok());
+        assert!(hsm.authorize_receive(0x301).is_ok());
+
+        // Non-whitelisted RX IDs should be denied
+        assert!(hsm.authorize_receive(0x302).is_err());
+    }
+
+    #[test]
+    fn test_rx_whitelist_authorized_receive() {
+        // Test: ECU with RX whitelist can receive authorized CAN IDs
+        use crate::access_control;
+        use crate::types::can_ids;
+
+        let mut hsm = VirtualHSM::new("BRAKE_CTRL".to_string(), 12345);
+
+        // Load brake controller policy (only receives 0x300 brake commands)
+        if let Some(permissions) = access_control::load_policy_for_ecu("BRAKE_CTRL") {
+            hsm.load_access_control(permissions);
+        }
+
+        // Create sender HSM and register trusted sender
+        let mut sender_hsm = VirtualHSM::new("AUTONOMOUS_CTRL".to_string(), 67890);
+        let sender_mac_key = *sender_hsm.get_symmetric_key();
+        hsm.add_trusted_ecu("AUTONOMOUS_CTRL".to_string(), sender_mac_key);
+
+        // Create secured frame from authorized sender on authorized CAN ID
+        let frame = SecuredCanFrame::new(
+            can_ids::BRAKE_COMMAND, // 0x300 - brake controller IS authorized to receive this
+            vec![0x50, 0x00, 0x00, 0x00], // 50% brake pressure
+            "AUTONOMOUS_CTRL".to_string(),
+            &mut sender_hsm,
+        )
+        .expect("Failed to create frame");
+
+        // Verify frame with RX whitelist check enabled
+        let result = frame.verify_with_authorization(&mut hsm); // Uses RX whitelist
+        assert!(
+            result.is_ok(),
+            "Brake controller should accept authorized brake command: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_rx_whitelist_unauthorized_receive() {
+        // Test: ECU with RX whitelist blocks unauthorized CAN IDs
+        use crate::access_control;
+        use crate::types::can_ids;
+
+        let mut hsm = VirtualHSM::new("BRAKE_CTRL".to_string(), 12345);
+
+        // Load brake controller policy (only receives 0x300, NOT 0x302 steering)
+        if let Some(permissions) = access_control::load_policy_for_ecu("BRAKE_CTRL") {
+            hsm.load_access_control(permissions);
+        }
+
+        // Create sender HSM and register trusted sender
+        let mut sender_hsm = VirtualHSM::new("AUTONOMOUS_CTRL".to_string(), 67890);
+        let sender_mac_key = *sender_hsm.get_symmetric_key();
+        hsm.add_trusted_ecu("AUTONOMOUS_CTRL".to_string(), sender_mac_key);
+
+        // Create secured frame on UNAUTHORIZED CAN ID for brake controller
+        let frame = SecuredCanFrame::new(
+            can_ids::STEERING_COMMAND, // 0x302 - brake controller NOT authorized to receive this!
+            vec![0x10, 0x00, 0x00, 0x00],
+            "AUTONOMOUS_CTRL".to_string(),
+            &mut sender_hsm,
+        )
+        .expect("Failed to create frame");
+
+        // Verify frame with RX whitelist check enabled
+        let result = frame.verify_with_authorization(&mut hsm); // Uses RX whitelist
+        assert!(
+            result.is_err(),
+            "Brake controller should reject unauthorized steering command"
+        );
+
+        // Verify it's specifically an access control error
+        if let Err(e) = result {
+            let error_msg = format!("{:?}", e);
+            assert!(
+                error_msg.contains("UnauthorizedAccess") || error_msg.contains("not authorized"),
+                "Error should indicate unauthorized access, got: {}",
+                error_msg
+            );
+        }
+    }
+
+    #[test]
+    fn test_rx_whitelist_none_receives_all() {
+        // Test: ECU without RX whitelist (None) receives all frames
+        use crate::types::can_ids;
+
+        let mut hsm = VirtualHSM::new("MONITOR".to_string(), 12345);
+
+        // Don't load any access control policy (RX whitelist = None)
+
+        // Create sender HSM and register trusted sender
+        let mut sender_hsm = VirtualHSM::new("SENSOR".to_string(), 67890);
+        let sender_mac_key = *sender_hsm.get_symmetric_key();
+        hsm.add_trusted_ecu("SENSOR".to_string(), sender_mac_key);
+
+        // Create secured frame
+        let frame = SecuredCanFrame::new(
+            can_ids::WHEEL_SPEED_FL, // Random CAN ID
+            vec![0x10, 0x20, 0x30, 0x40],
+            "SENSOR".to_string(),
+            &mut sender_hsm,
+        )
+        .expect("Failed to create frame");
+
+        // Verify frame with RX whitelist check enabled (should pass because RX whitelist is None)
+        let result = frame.verify_with_authorization(&mut hsm);
+        assert!(
+            result.is_ok(),
+            "ECU without RX whitelist should accept all frames: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_rx_whitelist_disabled_bypasses_check() {
+        // Test: RX whitelist enforcement can be disabled per-verification
+        use crate::access_control;
+        use crate::types::can_ids;
+
+        let mut hsm = VirtualHSM::new("BRAKE_CTRL".to_string(), 12345);
+
+        // Load brake controller policy (only receives 0x300)
+        if let Some(permissions) = access_control::load_policy_for_ecu("BRAKE_CTRL") {
+            hsm.load_access_control(permissions);
+        }
+
+        // Create sender HSM and register trusted sender
+        let mut sender_hsm = VirtualHSM::new("AUTONOMOUS_CTRL".to_string(), 67890);
+        let sender_mac_key = *sender_hsm.get_symmetric_key();
+        hsm.add_trusted_ecu("AUTONOMOUS_CTRL".to_string(), sender_mac_key);
+
+        // Create frame on unauthorized CAN ID
+        let frame = SecuredCanFrame::new(
+            can_ids::STEERING_COMMAND, // Unauthorized for brake controller
+            vec![0x10, 0x00, 0x00, 0x00],
+            "AUTONOMOUS_CTRL".to_string(),
+            &mut sender_hsm,
+        )
+        .expect("Failed to create frame");
+
+        // Verify with RX whitelist check DISABLED (use verify() not verify_with_authorization())
+        let result = frame.verify(&mut hsm);
+        assert!(
+            result.is_ok(),
+            "When using verify() instead of verify_with_authorization(), RX whitelist bypassed: {:?}",
+            result
+        );
+    }
+}
