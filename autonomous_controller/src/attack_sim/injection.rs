@@ -6,13 +6,12 @@
 /// 3. CRC Corruption - Frames with invalid CRCs
 /// 4. Source Spoofing - Frames claiming to be from different ECUs
 /// 5. Flooding - DoS attack via message flooding
-
 use crate::attack_sim::{AttackConfig, AttackResult, AttackSimulator, AttackType};
 use crate::hsm::{SecuredCanFrame, VirtualHSM};
 use crate::types::CanId;
 use chrono::Utc;
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 /// Unsecured frame injection attack
 pub struct UnsecuredInjector {
@@ -97,12 +96,8 @@ impl MacTamperer {
         source: String,
     ) -> Result<SecuredCanFrame, String> {
         // Create a valid frame first
-        let mut frame = SecuredCanFrame::new(
-            CanId::Standard(can_id as u16),
-            data,
-            source,
-            &mut self.hsm,
-        )?;
+        let mut frame =
+            SecuredCanFrame::new(CanId::Standard(can_id as u16), data, source, &mut self.hsm)?;
 
         // Tamper with the MAC by flipping random bits
         let byte_idx = self.rng.gen_range(0..32);
@@ -170,12 +165,8 @@ impl CrcCorruptor {
         source: String,
     ) -> Result<SecuredCanFrame, String> {
         // Create a valid frame
-        let mut frame = SecuredCanFrame::new(
-            CanId::Standard(can_id as u16),
-            data,
-            source,
-            &mut self.hsm,
-        )?;
+        let mut frame =
+            SecuredCanFrame::new(CanId::Standard(can_id as u16), data, source, &mut self.hsm)?;
 
         // Corrupt the CRC
         frame.crc = frame.crc.wrapping_add(self.rng.gen_range(1..=0xFF));
@@ -465,10 +456,7 @@ mod tests {
 
         let result = flooder.execute(&config).unwrap();
         assert_eq!(result.frames_sent, 500); // 0.5 * 1000 fps * 1 sec
-        assert_eq!(
-            result.metrics.get("flooding_rate_fps"),
-            Some(&500.0)
-        );
+        assert_eq!(result.metrics.get("flooding_rate_fps"), Some(&500.0));
     }
 
     #[test]

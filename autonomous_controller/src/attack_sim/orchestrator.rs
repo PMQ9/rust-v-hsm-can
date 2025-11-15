@@ -1,8 +1,7 @@
 /// Attack Orchestration Framework
 ///
 /// Coordinates multiple attack scenarios, manages scheduling, and collects metrics
-
-use crate::attack_sim::{AttackConfig, AttackResult, AttackSimulator, AttackType};
+use crate::attack_sim::{AttackConfig, AttackResult, AttackType};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -45,7 +44,8 @@ impl AttackScenario {
     /// Get total estimated duration in seconds
     pub fn estimated_duration_secs(&self) -> u64 {
         let attack_duration: u64 = self.attacks.iter().map(|a| a.duration_secs).sum();
-        let delay_duration = self.inter_attack_delay_secs * (self.attacks.len() as u64).saturating_sub(1);
+        let delay_duration =
+            self.inter_attack_delay_secs * (self.attacks.len() as u64).saturating_sub(1);
         attack_duration + delay_duration
     }
 }
@@ -157,7 +157,10 @@ impl AttackOrchestrator {
     }
 
     /// Execute a scenario (dry run - doesn't actually send frames)
-    pub fn execute_scenario_dry_run(&mut self, scenario_name: &str) -> Result<ScenarioResult, String> {
+    pub fn execute_scenario_dry_run(
+        &mut self,
+        scenario_name: &str,
+    ) -> Result<ScenarioResult, String> {
         let scenario = self
             .scenarios
             .get(scenario_name)
@@ -171,11 +174,19 @@ impl AttackOrchestrator {
         println!("Executing Scenario: {}", scenario.name);
         println!("Description: {}", scenario.description);
         println!("Number of Attacks: {}", scenario.attacks.len());
-        println!("Estimated Duration: {} seconds", scenario.estimated_duration_secs());
+        println!(
+            "Estimated Duration: {} seconds",
+            scenario.estimated_duration_secs()
+        );
         println!("========================================\n");
 
         for (idx, attack_config) in scenario.attacks.iter().enumerate() {
-            println!("Attack {}/{}: {}", idx + 1, scenario.attacks.len(), attack_config.attack_type);
+            println!(
+                "Attack {}/{}: {}",
+                idx + 1,
+                scenario.attacks.len(),
+                attack_config.attack_type
+            );
             println!("  Duration: {} seconds", attack_config.duration_secs);
             println!("  Intensity: {:.1}%", attack_config.intensity * 100.0);
 
@@ -205,7 +216,10 @@ impl AttackOrchestrator {
 
             // Simulate delay between attacks
             if idx < scenario.attacks.len() - 1 {
-                println!("  Waiting {} seconds before next attack...\n", scenario.inter_attack_delay_secs);
+                println!(
+                    "  Waiting {} seconds before next attack...\n",
+                    scenario.inter_attack_delay_secs
+                );
             }
         }
 

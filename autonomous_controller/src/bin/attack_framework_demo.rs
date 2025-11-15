@@ -2,13 +2,12 @@
 ///
 /// Shows how to use the comprehensive attack simulation framework
 /// with fuzzing, injection, replay attacks, and metrics collection
-
 use autonomous_vehicle_sim::attack_sim::fuzzing::{GrammarFuzzer, MutationFuzzer, RandomFuzzer};
 use autonomous_vehicle_sim::attack_sim::injection::{
     CrcCorruptor, Flooder, MacTamperer, SourceSpoofer, UnsecuredInjector,
 };
 use autonomous_vehicle_sim::attack_sim::metrics::{AttackMetrics, ScenarioComparison};
-use autonomous_vehicle_sim::attack_sim::orchestrator::{scenarios, AttackOrchestrator};
+use autonomous_vehicle_sim::attack_sim::orchestrator::{AttackOrchestrator, scenarios};
 use autonomous_vehicle_sim::attack_sim::replay::{
     DelayedReplay, ReorderedReplay, SelectiveReplay, SimpleReplay,
 };
@@ -69,7 +68,10 @@ fn demo_fuzzing_engines() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let result = random_fuzzer.execute(&config)?;
-    println!("   Executed attack: {} frames generated\n", result.frames_sent);
+    println!(
+        "   Executed attack: {} frames generated\n",
+        result.frames_sent
+    );
 
     // Mutation Fuzzing
     println!("2. Mutation-based Fuzzing");
@@ -221,7 +223,10 @@ fn demo_replay_attacks() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let old_frames = delayed_replay.get_oldest_frames(3);
-    println!("   Retrieved {} oldest frames for replay\n", old_frames.len());
+    println!(
+        "   Retrieved {} oldest frames for replay\n",
+        old_frames.len()
+    );
 
     // Reordered Replay
     println!("3. Reordered Replay");
@@ -266,7 +271,10 @@ fn demo_replay_attacks() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let commands = selective_replay.get_command_frames();
-    println!("   Captured {} command frames (brake, throttle, steering)", commands.len());
+    println!(
+        "   Captured {} command frames (brake, throttle, steering)",
+        commands.len()
+    );
     println!("   Ready for selective replay\n");
 
     println!("✓ Replay attacks demonstration complete\n");
@@ -300,10 +308,7 @@ fn demo_attack_orchestration() -> Result<(), Box<dyn std::error::Error>> {
     println!("Scenario Result:");
     println!("  Status: {:?}", result.status);
     println!("  Attacks executed: {}", result.attack_results.len());
-    println!(
-        "  Duration: {} ms",
-        result.duration_ms()
-    );
+    println!("  Duration: {} ms", result.duration_ms());
     println!();
 
     println!("✓ Attack orchestration demonstration complete\n");

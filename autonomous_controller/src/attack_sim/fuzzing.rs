@@ -4,13 +4,12 @@
 /// 1. Random Fuzzing - Generate completely random CAN frames
 /// 2. Mutation-based Fuzzing - Mutate valid frames (bit flips, byte modifications)
 /// 3. Grammar-based Fuzzing - Protocol-aware fuzzing respecting CAN structure
-
 use crate::attack_sim::{AttackConfig, AttackResult, AttackSimulator, AttackType};
 use crate::hsm::SecuredCanFrame;
 use crate::types::CanId;
 use chrono::Utc;
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 /// Random fuzzing engine
 pub struct RandomFuzzer {
@@ -372,9 +371,11 @@ mod tests {
 
         let result = fuzzer.execute(&config);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("No seed frames available for mutation"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("No seed frames available for mutation")
+        );
     }
 
     #[test]

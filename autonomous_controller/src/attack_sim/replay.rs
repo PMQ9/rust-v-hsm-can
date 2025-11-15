@@ -5,7 +5,6 @@
 /// 2. Delayed Replay - Replay after time delay
 /// 3. Reordered Replay - Change order of captured frames
 /// 4. Selective Replay - Replay specific high-value frames
-
 use crate::attack_sim::{AttackConfig, AttackResult, AttackSimulator, AttackType};
 use crate::hsm::SecuredCanFrame;
 use chrono::{DateTime, Duration, Utc};
@@ -138,9 +137,7 @@ impl AttackSimulator for DelayedReplay {
 
         if old_frames.is_empty() {
             // If no old frames, replay the oldest ones we have
-            let replay_frames = self.get_oldest_frames(
-                config.frame_count.unwrap_or(10) as usize
-            );
+            let replay_frames = self.get_oldest_frames(config.frame_count.unwrap_or(10) as usize);
             result.frames_sent = replay_frames.len() as u64;
         } else {
             let replay_count = config
@@ -192,8 +189,8 @@ impl ReorderedReplay {
 
     /// Get frames in shuffled order (deterministic shuffle)
     pub fn get_shuffled_frames(&self, seed: u64) -> Vec<SecuredCanFrame> {
-        use rand::{Rng, SeedableRng};
         use rand::rngs::StdRng;
+        use rand::{Rng, SeedableRng};
 
         let mut frames = self.captured_frames.clone();
         let mut rng = StdRng::seed_from_u64(seed);
@@ -209,11 +206,7 @@ impl ReorderedReplay {
 
     /// Get every Nth frame (create gaps)
     pub fn get_sparse_frames(&self, step: usize) -> Vec<SecuredCanFrame> {
-        self.captured_frames
-            .iter()
-            .step_by(step)
-            .cloned()
-            .collect()
+        self.captured_frames.iter().step_by(step).cloned().collect()
     }
 }
 
@@ -280,9 +273,7 @@ impl SelectiveReplay {
     /// Capture a frame (only if it matches target CAN IDs)
     pub fn capture_frame(&mut self, frame: SecuredCanFrame) {
         // Only capture frames with target CAN IDs
-        if self.target_can_ids.is_empty()
-            || self.target_can_ids.contains(&frame.can_id.value())
-        {
+        if self.target_can_ids.is_empty() || self.target_can_ids.contains(&frame.can_id.value()) {
             if self.captured_frames.len() >= self.max_capture_size {
                 self.captured_frames.remove(0);
             }

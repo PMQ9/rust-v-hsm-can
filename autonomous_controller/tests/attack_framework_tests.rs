@@ -6,13 +6,14 @@
 /// - Replay attacks (simple, delayed, reordered, selective)
 /// - Orchestration and scenarios
 /// - Metrics and reporting
-
 use autonomous_vehicle_sim::attack_sim::fuzzing::{GrammarFuzzer, MutationFuzzer, RandomFuzzer};
 use autonomous_vehicle_sim::attack_sim::injection::{
     CrcCorruptor, Flooder, MacTamperer, SourceSpoofer, UnsecuredInjector,
 };
 use autonomous_vehicle_sim::attack_sim::metrics::{AttackMetrics, ScenarioComparison};
-use autonomous_vehicle_sim::attack_sim::orchestrator::{scenarios, AttackOrchestrator, AttackScenario};
+use autonomous_vehicle_sim::attack_sim::orchestrator::{
+    AttackOrchestrator, AttackScenario, scenarios,
+};
 use autonomous_vehicle_sim::attack_sim::replay::{
     DelayedReplay, ReorderedReplay, SelectiveReplay, SimpleReplay,
 };
@@ -147,8 +148,7 @@ fn test_mac_tamperer_corrupts_mac() {
 fn test_source_spoofer_claims_different_source() {
     let mut spoofer = SourceSpoofer::new("ACTUAL_ATTACKER".to_string(), 77777);
 
-    match spoofer.generate_spoofed_frame(0x100, vec![7, 8, 9], "PRETEND_TO_BE_THIS".to_string())
-    {
+    match spoofer.generate_spoofed_frame(0x100, vec![7, 8, 9], "PRETEND_TO_BE_THIS".to_string()) {
         Ok(frame) => {
             assert_eq!(frame.source, "PRETEND_TO_BE_THIS");
             // Frame claims to be from PRETEND_TO_BE_THIS but was actually created by ACTUAL_ATTACKER

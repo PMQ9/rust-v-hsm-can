@@ -9,12 +9,11 @@
 /// - Replay attacks (simple, delayed, reordered, selective)
 /// - Attack orchestration and scheduling
 /// - Metrics collection and reporting
-
 pub mod fuzzing;
 pub mod injection;
-pub mod replay;
-pub mod orchestrator;
 pub mod metrics;
+pub mod orchestrator;
+pub mod replay;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

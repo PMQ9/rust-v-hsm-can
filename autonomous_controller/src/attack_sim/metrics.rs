@@ -1,9 +1,8 @@
+use crate::attack_sim::orchestrator::{ScenarioResult, ScenarioStatus};
 /// Attack Metrics and Reporting
 ///
 /// Provides detailed analysis and reporting capabilities for attack simulations
-
-use crate::attack_sim::{AttackResult, AttackType};
-use crate::attack_sim::orchestrator::{ScenarioResult, ScenarioStatus};
+use crate::attack_sim::AttackResult;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -157,7 +156,10 @@ impl AttackMetrics {
         // Overview
         report.push_str("OVERVIEW\n");
         report.push_str("--------\n");
-        report.push_str(&format!("Total Attacks Executed:    {}\n", self.total_attacks));
+        report.push_str(&format!(
+            "Total Attacks Executed:    {}\n",
+            self.total_attacks
+        ));
         report.push_str(&format!(
             "Total Duration:            {} ms ({:.2} seconds)\n",
             self.total_duration_ms,
@@ -168,7 +170,10 @@ impl AttackMetrics {
         // Frame statistics
         report.push_str("FRAME STATISTICS\n");
         report.push_str("----------------\n");
-        report.push_str(&format!("Frames Sent:               {}\n", self.total_frames_sent));
+        report.push_str(&format!(
+            "Frames Sent:               {}\n",
+            self.total_frames_sent
+        ));
         report.push_str(&format!(
             "Frames Injected:           {}\n",
             self.total_frames_injected
@@ -196,10 +201,7 @@ impl AttackMetrics {
         ));
 
         if let Some(avg_ttd) = self.avg_time_to_detection_ms {
-            report.push_str(&format!(
-                "Avg Time to Detection:     {:.2} ms\n",
-                avg_ttd
-            ));
+            report.push_str(&format!("Avg Time to Detection:     {:.2} ms\n", avg_ttd));
         }
 
         if let Some(fastest) = self.fastest_detection_ms {
@@ -308,7 +310,10 @@ impl ScenarioComparison {
         report.push_str("╚══════════════════════════════════════════════════════════════╝\n");
         report.push_str("\n");
 
-        report.push_str(&format!("Report Generated: {}\n", self.timestamp.format("%Y-%m-%d %H:%M:%S UTC")));
+        report.push_str(&format!(
+            "Report Generated: {}\n",
+            self.timestamp.format("%Y-%m-%d %H:%M:%S UTC")
+        ));
         report.push_str(&format!("Total Scenarios: {}\n\n", self.scenarios.len()));
 
         report.push_str("┌────────────────────────────┬────────┬────────┬─────────┬──────────┐\n");
@@ -481,9 +486,12 @@ mod tests {
 
         let mut result2 = ScenarioResult::new("scenario2".to_string());
         result2.status = ScenarioStatus::Completed;
-        result2
-            .attack_results
-            .push(create_test_result(AttackType::InjectUnsecured, 50, 30, false));
+        result2.attack_results.push(create_test_result(
+            AttackType::InjectUnsecured,
+            50,
+            30,
+            false,
+        ));
 
         comparison.add_scenario(&result1);
         comparison.add_scenario(&result2);
