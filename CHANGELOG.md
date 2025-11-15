@@ -1,6 +1,13 @@
 # Changelog
 ## 2025-11-15
 
+### Code Refactoring: HSM Module Structure
+- Refactored monolithic hsm.rs (2,645 lines) into modular architecture (1,844 lines across 8 files)
+- New structure: errors.rs, performance.rs, replay.rs, crypto.rs, firmware.rs, secured_frame.rs, core.rs, mod.rs
+- Each module follows Single Responsibility Principle for improved maintainability
+- Fixed replay protection edge case: counter=0 incorrectly accepted when last_accepted=100 with window_size=100
+- All 159+ tests passing, full backward compatibility maintained
+
 ### Test Coverage Improvements
 - Added 60+ edge case tests for threshold boundaries across all security features
 - Enhanced CI pipeline with dynamic test reporting and strict pass/fail enforcement
