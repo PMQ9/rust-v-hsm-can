@@ -1,5 +1,12 @@
 # Changelog
 
+## 2025-11-15
+
+### Attack Simulation Framework
+- Implemented attack simulation framework with fuzzing (random, mutation, grammar), injection (unsecured, MAC/CRC tampering, spoofing, flooding), and replay attacks (simple, delayed, reordered, selective)
+- Added attack orchestration with predefined scenarios and metrics collection
+- Added 75+ tests and attack_framework_demo binary
+
 ## 2025-11-14
 
 ### Test Design Methodology Guidelines
