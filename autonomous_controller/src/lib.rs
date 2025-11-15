@@ -1,5 +1,6 @@
 pub mod access_control;
 pub mod anomaly_detection;
+pub mod attack_framework;
 pub mod baseline_persistence;
 pub mod can_bus;
 pub mod ecu;
@@ -16,6 +17,7 @@ pub use anomaly_detection::{
     AnomalyBaseline, AnomalyDetector, AnomalyReport, AnomalyResult, AnomalySeverity, AnomalyType,
     DetectorMode,
 };
+pub use attack_framework::{AttackConfig, AttackSimulator, AttackStats, AttackType};
 pub use baseline_persistence::{SignedBaseline, load_baseline, save_baseline};
 pub use can_bus::VirtualCanBus;
 pub use ecu::Ecu;
