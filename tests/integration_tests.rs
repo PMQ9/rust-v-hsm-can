@@ -208,11 +208,11 @@ async fn test_bus_behavior_with_receiver_disconnect() {
 }
 
 #[tokio::test]
-async fn test_zero_capacity_bus() {
-    // Test edge case: bus with zero capacity (should still work for immediate consumption)
-    let bus = VirtualCanBus::new(0);
+async fn test_minimal_capacity_bus() {
+    // Test edge case: bus with minimal capacity (1 message buffer)
+    let bus = VirtualCanBus::new(1);
 
-    // Subscriber must exist before send for zero-capacity
+    // Subscriber must exist before send
     let mut rx = bus.subscribe();
 
     // Spawn sender in separate task

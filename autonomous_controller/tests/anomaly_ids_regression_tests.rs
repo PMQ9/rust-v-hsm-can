@@ -252,13 +252,16 @@ fn test_anomaly_ids_sigma_threshold_boundaries() {
     println!("  • 1.3σ - 3.0σ → Warning (80-99% confidence)");
     println!("  • ≥ 3.0σ → Attack (>99% confidence)\n");
 
-    // Create HSM with custom thresholds for precise testing
+    // Create HSM for testing sigma boundaries
     let mut hsm = VirtualHSM::new("SIGMA_TEST".to_string(), 77777);
     hsm.start_anomaly_training(20).unwrap();
 
-    // Train with very consistent data (low std dev)
-    for _ in 0..100 {
-        let frame = create_secured_frame(0x100, vec![100, 100, 100, 100], "SENSOR_A");
+    // Train with data that has controlled variation (mean=100, std_dev≈5)
+    // This allows us to predict sigma values accurately
+    for i in 0..100 {
+        let variation = ((i % 10) as i16 - 5) as u8; // Values: 95-105
+        let first_byte = (100_i16 + variation as i16) as u8;
+        let frame = create_secured_frame(0x100, vec![first_byte, 100, 100, 100], "SENSOR_A");
         hsm.train_anomaly_detector(&frame).unwrap();
     }
 
@@ -267,8 +270,8 @@ fn test_anomaly_ids_sigma_threshold_boundaries() {
 
     println!("Step 1: Testing just below warning threshold");
     println!("-------------------------------------------");
-    // Data very close to mean (should be Normal)
-    let near_normal = create_secured_frame(0x100, vec![101, 100, 100, 100], "SENSOR_A");
+    // Data close to mean (should be Normal - within ~1σ)
+    let near_normal = create_secured_frame(0x100, vec![103, 100, 100, 100], "SENSOR_A");
     let result = hsm.detect_anomaly(&near_normal);
     match result {
         AnomalyResult::Normal => {
@@ -281,14 +284,14 @@ fn test_anomaly_ids_sigma_threshold_boundaries() {
             );
         }
         AnomalyResult::Attack(_) => {
-            println!("! Note: Small deviation triggered Attack (may happen with zero std dev)");
+            println!("! Note: Small deviation triggered Attack");
         }
     }
 
     println!("\nStep 2: Testing far from mean (high sigma)");
     println!("--------------------------------------------");
-    // Data very far from mean (should be Attack with high sigma)
-    let far_anomaly = create_secured_frame(0x100, vec![200, 100, 100, 100], "SENSOR_A");
+    // Data very far from mean (120 is ~4σ away from mean=100, std≈5)
+    let far_anomaly = create_secured_frame(0x100, vec![120, 100, 100, 100], "SENSOR_A");
     let result = hsm.detect_anomaly(&far_anomaly);
 
     match result {
