@@ -1,6 +1,14 @@
 # Changelog
 ## 2025-11-15
 
+### Attack Simulation Framework
+- Added comprehensive attack simulation framework for security testing (fuzzing, injection, replay)
+- New module: attack_framework.rs with 6 attack types (Injection, Replay, Flooding, Spoofing, Fuzzing, Combined)
+- CLI tool: attack_simulator binary for running attacks with configurable parameters
+- Example configs: 4 JSON config files for common attack scenarios
+- Unit tests: 6 tests for attack generation logic
+- Integration tests: 7 regression tests for attack execution (attack_framework_tests.rs)
+
 ### Test Recovery: Restored 35 Deleted Tests from HSM Refactoring
 - Restored all 35 tests deleted during hsm.rs modular refactoring (total: 173 unit tests, up from 138)
 - Distributed tests across modules: replay.rs (26), crypto.rs (9), secured_frame.rs (8), core.rs (11), firmware.rs (1)

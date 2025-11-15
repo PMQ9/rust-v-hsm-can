@@ -1,0 +1,9 @@
+{
+  "attack_type": "Flooding",
+  "duration_secs": 30,
+  "frames_per_second": 2000,
+  "target_can_ids": [],
+  "attacker_name": "DOS_FLOODER",
+  "malform_percentage": 0,
+  "capture_duration_secs": 10
+}

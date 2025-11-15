@@ -107,5 +107,10 @@ path = "src/bin/test_legitimate_sender.rs"
 name = "security_log_analyzer"
 path = "src/bin/security_log_analyzer.rs"
 
+# Attack simulation framework
+[[bin]]
+name = "attack_simulator"
+path = "src/bin/attack_simulator.rs"
+
 [dev-dependencies]
 tempfile = "3.8"

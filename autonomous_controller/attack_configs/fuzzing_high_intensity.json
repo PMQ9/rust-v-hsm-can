@@ -1,0 +1,9 @@
+{
+  "attack_type": "Fuzzing",
+  "duration_secs": 120,
+  "frames_per_second": 500,
+  "target_can_ids": [],
+  "attacker_name": "FUZZER_HIGH_INTENSITY",
+  "malform_percentage": 75,
+  "capture_duration_secs": 10
+}

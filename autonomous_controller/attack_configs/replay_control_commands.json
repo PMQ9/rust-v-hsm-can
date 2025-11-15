@@ -1,0 +1,9 @@
+{
+  "attack_type": "Replay",
+  "duration_secs": 180,
+  "frames_per_second": 50,
+  "target_can_ids": [768, 769, 770],
+  "attacker_name": "REPLAY_ATTACKER",
+  "malform_percentage": 0,
+  "capture_duration_secs": 30
+}

@@ -1,0 +1,9 @@
+{
+  "attack_type": "Injection",
+  "duration_secs": 60,
+  "frames_per_second": 100,
+  "target_can_ids": [768],
+  "attacker_name": "BRAKE_ATTACKER",
+  "malform_percentage": 0,
+  "capture_duration_secs": 10
+}
