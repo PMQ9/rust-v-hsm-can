@@ -1,6 +1,10 @@
 # Changelog
 ## 2025-11-15
 
+### Security Fixes
+- Fixed CAN frame size validation bypass (data.len() > 8 now rejected)
+- Fixed empty anomaly baseline acceptance (empty profiles now rejected)
+
 ### Attack Simulation Framework
 - Added comprehensive attack simulation framework for security testing (fuzzing, injection, replay)
 - New module: attack_framework.rs with 6 attack types (Injection, Replay, Flooding, Spoofing, Fuzzing, Combined)

@@ -518,6 +518,13 @@ impl AnomalyDetector {
             .take()
             .ok_or("Training baseline not initialized")?;
 
+        // SECURITY FIX: Reject empty baselines (no CAN IDs trained)
+        if baseline.profiles.is_empty() {
+            return Err(
+                "Cannot finalize baseline: no CAN IDs were trained (baseline is empty)".to_string(),
+            );
+        }
+
         // Check if we have enough samples
         for (can_id, profile) in &baseline.profiles {
             if profile.message_count < self.min_samples_per_can_id {
@@ -1762,27 +1769,29 @@ mod tests {
     #[test]
     fn test_training_samples_zero_threshold_edge_case() {
         // Test: Edge case with threshold=1 (minimum meaningful threshold)
-        // SECURITY GAP IDENTIFIED: Finalization with zero samples succeeds!
+        // SECURITY FIX: Finalization with zero samples now correctly fails!
         let mut detector = AnomalyDetector::new();
         let min_samples = 1;
         detector
             .start_training("TEST_ECU".to_string(), min_samples)
             .unwrap();
 
-        // Test 0 samples - CURRENT BEHAVIOR: Passes (should fail!)
-        // When detector has no profiles, validation passes incorrectly
-        // TODO: Add validation to reject finalization when no CAN IDs have been trained
+        // Test 0 samples - FIXED: Now correctly fails
+        // Empty baselines are rejected to prevent IDS bypass
         let result = detector.finalize_training();
         assert!(
-            result.is_ok(),
-            "SECURITY GAP: 0 samples currently succeeds (should fail with no training data)"
+            result.is_err(),
+            "0 samples should fail even with threshold=1 (empty baseline)"
         );
 
-        // When this bug is fixed, uncomment the assertion below:
-        // assert!(
-        //     result.is_err(),
-        //     "0 samples should fail even with threshold=1"
-        // );
+        // Verify error message mentions empty baseline
+        if let Err(e) = result {
+            assert!(
+                e.contains("empty") || e.contains("no CAN IDs"),
+                "Error should mention empty baseline, got: {}",
+                e
+            );
+        }
 
         // Test 1 sample - PASS
         let mut detector = AnomalyDetector::new();

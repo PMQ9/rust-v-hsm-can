@@ -41,6 +41,14 @@ impl SecuredCanFrame {
         // Check authorization before creating frame
         hsm.authorize_transmit(can_id.value())?;
 
+        // SECURITY FIX: Validate CAN frame data length (CAN 2.0 spec: max 8 bytes)
+        if data.len() > 8 {
+            return Err(format!(
+                "CAN data length {} exceeds maximum of 8 bytes (CAN 2.0 specification)",
+                data.len()
+            ));
+        }
+
         let start = if hsm.is_performance_enabled() {
             Some(Instant::now())
         } else {
@@ -353,8 +361,7 @@ mod tests {
     #[test]
     fn test_can_frame_nine_bytes_rejected() {
         // Test: 9-byte CAN frame is INVALID (exceeds CAN standard maximum)
-        // SECURITY GAP IDENTIFIED: Current implementation does NOT reject 9-byte frames!
-        // This test documents the current behavior. Frames should be validated at creation.
+        // SECURITY FIX: Implementation now properly rejects frames > 8 bytes
         let mut hsm = VirtualHSM::new("TEST_ECU".to_string(), 12345);
         let can_id = crate::types::CanId::Standard(0x100);
 
@@ -365,27 +372,20 @@ mod tests {
             &mut hsm,
         );
 
-        // CURRENT BEHAVIOR: Implementation accepts 9-byte frames (BUG!)
-        // TODO: Add validation in SecuredCanFrame::new() to reject data > 8 bytes
+        // FIXED: 9-byte frames are now correctly rejected
         assert!(
-            result.is_ok(),
-            "SECURITY GAP: 9-byte CAN frame should be rejected but is currently accepted"
+            result.is_err(),
+            "9-byte CAN frame should be rejected (exceeds maximum)"
         );
 
-        // When this bug is fixed, uncomment the assertion below:
-        // assert!(
-        //     result.is_err(),
-        //     "9-byte CAN frame should be rejected (exceeds maximum)"
-        // );
-        //
-        // if let Err(e) = result {
-        //     let error_msg = e.to_string();
-        //     assert!(
-        //         error_msg.contains("exceeds maximum") || error_msg.contains("too large"),
-        //         "Error should mention data length, got: {}",
-        //         error_msg
-        //     );
-        // }
+        if let Err(e) = result {
+            let error_msg = e.to_string();
+            assert!(
+                error_msg.contains("exceeds maximum") || error_msg.contains("9"),
+                "Error should mention data length, got: {}",
+                error_msg
+            );
+        }
     }
 
     #[test]
