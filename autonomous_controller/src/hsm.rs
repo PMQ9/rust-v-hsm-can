@@ -2083,10 +2083,7 @@ mod tests {
 
         // Counter 1 is within window (100 - 99 = 1)
         let result = hsm.validate_counter(1, "ECU2", timestamp);
-        assert!(
-            result.is_ok(),
-            "Counter within window should be accepted"
-        );
+        assert!(result.is_ok(), "Counter within window should be accepted");
 
         // Counter 0 (exactly window_size away from 100: 100 - 100 = 0) should be rejected
         // The window check is: counter >= last - window_size
