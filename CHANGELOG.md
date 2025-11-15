@@ -1,4 +1,11 @@
 # Changelog
+## 2025-11-15
+
+### Test Coverage Improvements
+- Added 60+ edge case tests for threshold boundaries across all security features
+- Enhanced CI pipeline with dynamic test reporting and strict pass/fail enforcement
+- Added run_ci_tests.sh for local testing, branch protection guide for PR requirements
+- Test count: 159+ (up from ~90)
 
 ## 2025-11-14
 
