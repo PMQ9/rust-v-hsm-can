@@ -7,6 +7,8 @@
 - Added runtime interval_trackers HashMap to maintain last-seen timestamps during detection
 - Interval detection now properly works alongside rate, data range, source, and CAN ID anomaly detection
 - Added baseline JSON files to .gitignore for security (deployment artifacts, not source code)
+- Added anomaly_ids_regression_tests to CI pipeline and GitHub Actions (was missing)
+- Added CI test summary stage to display comprehensive results table
 
 ### Anomaly-Based IDS with Statistical Baseline Profiling
 - Implemented behavioral anomaly detection using statistical profiling (no ML, simple statistics)
