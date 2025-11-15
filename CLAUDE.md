@@ -311,6 +311,107 @@ cargo test --package autonomous_vehicle_sim --test anomaly_ids_regression_tests 
 
 **DO NOT** consider your work complete until all CI tests pass. If any test fails, fix it before moving on.
 
+### Test Design Methodology
+
+**CRITICAL**: After implementing ANY feature, you MUST design and implement comprehensive tests covering:
+
+#### 1. Normal Operation Tests (Should PASS)
+- Identify all expected/valid use cases for the feature
+- Test typical inputs and common scenarios
+- Verify the feature behaves correctly under normal conditions
+- Example: Valid CAN frame with correct MAC should be accepted
+
+#### 2. Failure Operation Tests (Should FAIL)
+- Identify all invalid/malicious use cases
+- Test inputs that should be rejected
+- Verify the feature fails gracefully with appropriate errors
+- Example: CAN frame with corrupted MAC should be rejected
+
+#### 3. Edge Case Tests (Threshold Boundaries)
+- **MOST CRITICAL**: Identify ALL thresholds, limits, and boundary conditions in your implementation
+- For each threshold, test BOTH sides of the boundary:
+  - **Just below threshold**: Should PASS (or maintain current state)
+  - **Exactly at threshold**: Document expected behavior
+  - **Just above threshold**: Should FAIL (or transition to new state)
+
+**Threshold Testing Examples:**
+
+```rust
+// Example: AttackDetector with MAC error threshold = 3
+#[test]
+fn test_mac_errors_below_threshold() {
+    // 2 consecutive MAC errors (< 3) - should stay in Normal state
+    assert_eq!(detector.state(), DetectorState::Normal);
+}
+
+#[test]
+fn test_mac_errors_at_threshold() {
+    // 3 consecutive MAC errors (== 3) - should transition to Warning
+    assert_eq!(detector.state(), DetectorState::Warning);
+}
+
+#[test]
+fn test_mac_errors_above_threshold() {
+    // 4+ consecutive MAC errors (> 3) - should be in UnderAttack
+    assert_eq!(detector.state(), DetectorState::UnderAttack);
+}
+```
+
+```rust
+// Example: Anomaly detection with 3-sigma threshold (99% confidence)
+#[test]
+fn test_anomaly_below_threshold() {
+    // 2.9 sigma deviation - should return Warning (80-99%)
+    assert!(matches!(result, AnomalyResult::Warning(_)));
+}
+
+#[test]
+fn test_anomaly_at_threshold() {
+    // Exactly 3.0 sigma - should return Attack (>99%)
+    assert!(matches!(result, AnomalyResult::Attack(_)));
+}
+
+#[test]
+fn test_anomaly_above_threshold() {
+    // 5.0 sigma deviation - should return Attack (>99%)
+    assert!(matches!(result, AnomalyResult::Attack(_)));
+}
+```
+
+#### 4. Test Organization
+
+**Unit Tests** (`#[cfg(test)] mod tests`):
+- Test individual functions and methods in isolation
+- Cover edge cases and boundary conditions
+- Fast execution (< 1ms per test)
+- Location: Same file as implementation
+
+**Regression Tests** (`tests/*.rs` with `#[ignore]`):
+- End-to-end integration tests
+- Simulate real attack scenarios
+- Test multi-component interactions
+- May take longer to execute
+- Location: `tests/` directory
+
+#### 5. Required Test Coverage for New Features
+
+When implementing a new feature, you MUST:
+
+1. **Identify all thresholds**: List every numeric threshold, limit, or boundary condition
+2. **Test normal cases**: At least 3 tests for typical valid inputs
+3. **Test failure cases**: At least 3 tests for invalid/malicious inputs
+4. **Test each threshold**: Minimum 3 tests per threshold (below/at/above)
+5. **Document edge cases**: Add comments explaining boundary behavior
+
+**Example Checklist:**
+- [ ] Normal operation tests written and passing
+- [ ] Failure operation tests written and failing correctly
+- [ ] All thresholds identified and documented
+- [ ] Edge cases tested (below threshold passes, above threshold fails)
+- [ ] Unit tests added to source file
+- [ ] Regression tests added if needed
+- [ ] Full CI test suite passes
+
 ## Development Workflow
 
 **IMPORTANT**: Do not use `git add` or `git commit` on your own. The user will review all changes.

@@ -2,6 +2,9 @@
 
 ## 2025-11-14
 
+### Test Design Methodology Guidelines
+- Added comprehensive test design methodology to CLAUDE.md: normal/failure cases, threshold boundary testing
+
 ### Bug Fix: Interval Anomaly Detection
 - Fixed interval anomaly detection not working after loading baselines from disk
 - Added runtime interval_trackers HashMap to maintain last-seen timestamps during detection
