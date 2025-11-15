@@ -201,4 +201,206 @@ mod tests {
             );
         }
     }
+
+    // ========================================================================
+    // Edge Case and Boundary Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_partial_token_rejection() {
+        let limiter = RateLimiter::new(5, 10);
+
+        // Drain bucket completely
+        for _ in 0..5 {
+            assert!(limiter.allow_message("TEST_ECU").await);
+        }
+
+        // Wait for partial refill (50ms = ~0.5 tokens at 10 tokens/sec)
+        sleep(Duration::from_millis(50)).await;
+
+        // Should still be rejected (need at least 1.0 token)
+        assert!(
+            !limiter.allow_message("TEST_ECU").await,
+            "Partial token (0.5) should not allow message"
+        );
+
+        // Wait another 50ms (total 100ms = 1.0 token)
+        sleep(Duration::from_millis(50)).await;
+
+        // Should now be accepted
+        assert!(
+            limiter.allow_message("TEST_ECU").await,
+            "Full token (1.0) should allow message"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_token_bucket_max_capacity() {
+        let limiter = RateLimiter::new(10, 100);
+
+        // Wait long enough to refill beyond capacity (500ms >> bucket size)
+        sleep(Duration::from_millis(500)).await;
+
+        // Should only allow max_tokens messages (10), not more
+        for i in 0..10 {
+            assert!(
+                limiter.allow_message("TEST_ECU").await,
+                "Message {} should be allowed (within max capacity)",
+                i
+            );
+        }
+
+        // 11th message should be throttled (bucket capped at max_tokens)
+        assert!(
+            !limiter.allow_message("TEST_ECU").await,
+            "Message beyond max_tokens should be throttled"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_exact_refill_timing() {
+        // 10 tokens/sec = 1 token per 100ms
+        let limiter = RateLimiter::new(1, 10);
+
+        // Drain the single token
+        assert!(limiter.allow_message("TEST_ECU").await);
+
+        // Wait exactly 100ms (should refill exactly 1 token)
+        sleep(Duration::from_millis(100)).await;
+
+        // Should allow exactly one message
+        assert!(
+            limiter.allow_message("TEST_ECU").await,
+            "Should allow message after exact refill time"
+        );
+
+        // Immediate second message should be throttled
+        assert!(
+            !limiter.allow_message("TEST_ECU").await,
+            "Second message without refill should be throttled"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_zero_initial_tokens() {
+        // Start with empty bucket (max_tokens=0)
+        let limiter = RateLimiter::new(0, 10);
+
+        // Should immediately throttle (no burst capacity)
+        assert!(
+            !limiter.allow_message("TEST_ECU").await,
+            "Should throttle with zero max_tokens"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_very_high_refill_rate() {
+        // 1000 tokens/sec = very permissive
+        let limiter = RateLimiter::new(100, 1000);
+
+        // Send burst of 100 messages
+        for i in 0..100 {
+            assert!(
+                limiter.allow_message("TEST_ECU").await,
+                "Message {} should be allowed in burst",
+                i
+            );
+        }
+
+        // 101st should be throttled
+        assert!(!limiter.allow_message("TEST_ECU").await);
+
+        // Wait tiny amount (10ms = ~10 tokens at 1000/sec)
+        sleep(Duration::from_millis(10)).await;
+
+        // Should allow ~10 more messages
+        for i in 0..10 {
+            assert!(
+                limiter.allow_message("TEST_ECU").await,
+                "Message {} should be allowed after fast refill",
+                i
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sustained_rate_at_limit() {
+        // 10 msg/sec sustained rate
+        let limiter = RateLimiter::new(2, 10);
+
+        // Send messages at exactly the refill rate (100ms intervals)
+        for i in 0..20 {
+            // First 2 use burst capacity
+            if i < 2 {
+                assert!(
+                    limiter.allow_message("TEST_ECU").await,
+                    "Burst message {} should be allowed",
+                    i
+                );
+            } else {
+                // Wait for refill
+                sleep(Duration::from_millis(100)).await;
+                assert!(
+                    limiter.allow_message("TEST_ECU").await,
+                    "Sustained message {} should be allowed",
+                    i
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_ecus_do_not_share_buckets() {
+        let limiter = RateLimiter::new(5, 10);
+
+        // ECU1 drains its bucket
+        for _ in 0..5 {
+            assert!(limiter.allow_message("ECU1").await);
+        }
+        assert!(!limiter.allow_message("ECU1").await);
+
+        // ECU2 should have full bucket (independent)
+        for i in 0..5 {
+            assert!(
+                limiter.allow_message("ECU2").await,
+                "ECU2 message {} should be allowed (independent bucket)",
+                i
+            );
+        }
+        assert!(!limiter.allow_message("ECU2").await);
+
+        // ECU3 should also have full bucket
+        for i in 0..5 {
+            assert!(
+                limiter.allow_message("ECU3").await,
+                "ECU3 message {} should be allowed (independent bucket)",
+                i
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fractional_refill_accumulation() {
+        // 1 token/sec (slow refill)
+        let limiter = RateLimiter::new(2, 1);
+
+        // Drain bucket
+        assert!(limiter.allow_message("TEST_ECU").await);
+        assert!(limiter.allow_message("TEST_ECU").await);
+        assert!(!limiter.allow_message("TEST_ECU").await);
+
+        // Wait 500ms (0.5 tokens)
+        sleep(Duration::from_millis(500)).await;
+        assert!(
+            !limiter.allow_message("TEST_ECU").await,
+            "0.5 tokens not enough"
+        );
+
+        // Wait another 500ms (total 1.0 token)
+        sleep(Duration::from_millis(500)).await;
+        assert!(
+            limiter.allow_message("TEST_ECU").await,
+            "1.0 token should allow message"
+        );
+    }
 }
