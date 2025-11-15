@@ -205,3 +205,226 @@ pub fn authorize_firmware_update(update_token: &[u8; 32], firmware_update_key: &
         .zip(expected.iter())
         .all(|(a, b)| a == b)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hsm::core::VirtualHSM;
+    use crate::hsm::errors::{MacFailureReason, VerifyError};
+    use crate::hsm::firmware::SignedFirmware;
+    use crate::hsm::secured_frame::SecuredCanFrame;
+
+    #[test]
+    fn test_mac_generation_and_verification() {
+        let mut hsm1 = VirtualHSM::new("ECU1".to_string(), 12345);
+        let hsm2_key = *hsm1.get_symmetric_key();
+
+        let mut hsm2 = VirtualHSM::new("ECU2".to_string(), 67890);
+        hsm2.add_trusted_ecu("ECU1".to_string(), hsm2_key);
+
+        let data = b"test data";
+        let counter = hsm1.get_session_counter();
+        let mac = hsm1.generate_mac(data, counter);
+
+        assert!(hsm2.verify_mac(data, &mac, counter, "ECU1").is_ok());
+    }
+
+    #[test]
+    fn test_crc_calculation() {
+        let hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+        let data = b"test data";
+        let crc = hsm.calculate_crc(data);
+
+        assert!(hsm.verify_crc(data, crc));
+        assert!(!hsm.verify_crc(b"wrong data", crc));
+    }
+
+    #[test]
+    fn test_crc_mismatch_detection() {
+        let mut sender_hsm = VirtualHSM::new("SENDER".to_string(), 12345);
+        let sender_key = *sender_hsm.get_symmetric_key();
+
+        let mut receiver_hsm = VirtualHSM::new("RECEIVER".to_string(), 67890);
+        receiver_hsm.add_trusted_ecu("SENDER".to_string(), sender_key);
+
+        // Create valid frame
+        let mut frame = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![1, 2, 3, 4],
+            "SENDER".to_string(),
+            &mut sender_hsm,
+        )
+        .unwrap();
+
+        // Corrupt the CRC by changing it
+        frame.crc = frame.crc.wrapping_add(1);
+
+        // Verification should fail with CrcMismatch
+        let result = frame.verify(&mut receiver_hsm);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), VerifyError::CrcMismatch);
+    }
+
+    #[test]
+    fn test_mac_no_key_registered() {
+        let mut sender_hsm = VirtualHSM::new("SENDER".to_string(), 12345);
+
+        // Receiver does NOT have sender's key registered
+        let mut receiver_hsm = VirtualHSM::new("RECEIVER".to_string(), 67890);
+        // Intentionally NOT calling: receiver_hsm.add_trusted_ecu("SENDER", ...)
+
+        let frame = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![1, 2, 3, 4],
+            "SENDER".to_string(),
+            &mut sender_hsm,
+        )
+        .unwrap();
+
+        // Verification should fail with MacMismatch(NoKeyRegistered)
+        let result = frame.verify(&mut receiver_hsm);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            VerifyError::MacMismatch(MacFailureReason::NoKeyRegistered)
+        );
+    }
+
+    #[test]
+    fn test_mac_crypto_failure() {
+        let mut sender_hsm = VirtualHSM::new("SENDER".to_string(), 12345);
+        let sender_key = *sender_hsm.get_symmetric_key();
+
+        let mut receiver_hsm = VirtualHSM::new("RECEIVER".to_string(), 67890);
+        receiver_hsm.add_trusted_ecu("SENDER".to_string(), sender_key);
+
+        // Create valid frame
+        let mut frame = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![1, 2, 3, 4],
+            "SENDER".to_string(),
+            &mut sender_hsm,
+        )
+        .unwrap();
+
+        // Corrupt the MAC by changing one byte
+        frame.mac[0] = frame.mac[0].wrapping_add(1);
+
+        // Verification should fail with MacMismatch(CryptoFailure)
+        let result = frame.verify(&mut receiver_hsm);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            VerifyError::MacMismatch(MacFailureReason::CryptoFailure)
+        );
+    }
+
+    #[test]
+    fn test_crc_mismatch_with_valid_mac() {
+        // Test that CRC is checked first (fails fast before MAC check)
+        let mut sender_hsm = VirtualHSM::new("SENDER".to_string(), 12345);
+        let sender_key = *sender_hsm.get_symmetric_key();
+
+        let mut receiver_hsm = VirtualHSM::new("RECEIVER".to_string(), 67890);
+        receiver_hsm.add_trusted_ecu("SENDER".to_string(), sender_key);
+
+        let mut frame = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![5, 6, 7, 8],
+            "SENDER".to_string(),
+            &mut sender_hsm,
+        )
+        .unwrap();
+
+        // Corrupt CRC (MAC is still valid)
+        frame.crc = 0;
+
+        // Should fail with CRC error, not MAC error
+        let result = frame.verify(&mut receiver_hsm);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), VerifyError::CrcMismatch);
+    }
+
+    #[test]
+    fn test_data_corruption_detected_by_crc() {
+        let mut sender_hsm = VirtualHSM::new("SENDER".to_string(), 12345);
+        let sender_key = *sender_hsm.get_symmetric_key();
+
+        let mut receiver_hsm = VirtualHSM::new("RECEIVER".to_string(), 67890);
+        receiver_hsm.add_trusted_ecu("SENDER".to_string(), sender_key);
+
+        let mut frame = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![10, 20, 30, 40],
+            "SENDER".to_string(),
+            &mut sender_hsm,
+        )
+        .unwrap();
+
+        // Corrupt data (simulating transmission error)
+        frame.data[0] = 99;
+
+        // CRC should detect the corruption
+        let result = frame.verify(&mut receiver_hsm);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), VerifyError::CrcMismatch);
+    }
+
+    #[test]
+    fn test_tampered_can_id_detected_by_crc() {
+        let mut sender_hsm = VirtualHSM::new("SENDER".to_string(), 12345);
+        let sender_key = *sender_hsm.get_symmetric_key();
+
+        let mut receiver_hsm = VirtualHSM::new("RECEIVER".to_string(), 67890);
+        receiver_hsm.add_trusted_ecu("SENDER".to_string(), sender_key);
+
+        let mut frame = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![11, 22, 33, 44],
+            "SENDER".to_string(),
+            &mut sender_hsm,
+        )
+        .unwrap();
+
+        // Attacker changes CAN ID (trying to inject command on different ID)
+        frame.can_id = crate::types::CanId::Standard(0x300); // Changed from 0x100
+
+        // CRC should detect the tampering (CAN ID is included in CRC calculation)
+        let result = frame.verify(&mut receiver_hsm);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), VerifyError::CrcMismatch);
+    }
+
+    #[test]
+    fn test_tampered_source_detected_by_mac() {
+        let mut sender_hsm = VirtualHSM::new("SENDER".to_string(), 12345);
+        let sender_key = *sender_hsm.get_symmetric_key();
+
+        let mut receiver_hsm = VirtualHSM::new("RECEIVER".to_string(), 67890);
+        receiver_hsm.add_trusted_ecu("SENDER".to_string(), sender_key);
+        // Also register ATTACKER key (different from SENDER)
+        let mut attacker_hsm = VirtualHSM::new("ATTACKER".to_string(), 99999);
+        let attacker_key = *attacker_hsm.get_symmetric_key();
+        receiver_hsm.add_trusted_ecu("ATTACKER".to_string(), attacker_key);
+
+        let mut frame = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![55, 66, 77, 88],
+            "SENDER".to_string(),
+            &mut sender_hsm,
+        )
+        .unwrap();
+
+        // Attacker changes source field (spoofing)
+        frame.source = "ATTACKER".to_string();
+
+        // CRC will fail first (source is in CRC calculation)
+        let result = frame.verify(&mut receiver_hsm);
+        assert!(result.is_err());
+        // Could be CRC or MAC mismatch depending on implementation
+        assert!(matches!(
+            result.unwrap_err(),
+            VerifyError::CrcMismatch | VerifyError::MacMismatch(_)
+        ));
+    }
+}
