@@ -85,11 +85,11 @@ jobs:
         echo "" >> test-summary.md
 
         # Count test results
-        UNIT_TESTS=$(grep -oP "test result:.*?\K\d+(?= passed)" unit-tests.log 2>/dev/null || echo "0")
-        UNIT_FAILED=$(grep -oP "test result:.*?(\d+) failed" unit-tests.log | grep -oP "\d+" 2>/dev/null || echo "0")
+        UNIT_TESTS=$(grep -oP "test result:.*?\K\d+(?= passed)" unit-tests.log 2>/dev/null | tail -n 1 || echo "0")
+        UNIT_FAILED=$(grep -oP "test result:.*?(\d+) failed" unit-tests.log | grep -oP "\d+" 2>/dev/null | tail -n 1 || echo "0")
 
-        INTEGRATION_TESTS=$(grep -oP "test result:.*?\K\d+(?= passed)" integration-tests.log 2>/dev/null || echo "0")
-        INTEGRATION_FAILED=$(grep -oP "test result:.*?(\d+) failed" integration-tests.log | grep -oP "\d+" 2>/dev/null || echo "0")
+        INTEGRATION_TESTS=$(grep -oP "test result:.*?\K\d+(?= passed)" integration-tests.log 2>/dev/null | tail -n 1 || echo "0")
+        INTEGRATION_FAILED=$(grep -oP "test result:.*?(\d+) failed" integration-tests.log | grep -oP "\d+" 2>/dev/null | tail -n 1 || echo "0")
 
         ATTACK_TESTS=$(grep -c "Test PASSED" attack-tests.log 2>/dev/null || echo "0")
         ACCESS_TESTS=$(grep -c "Test PASSED" access-tests.log 2>/dev/null || echo "0")
