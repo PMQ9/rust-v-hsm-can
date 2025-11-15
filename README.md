@@ -172,11 +172,38 @@ rust-v-hsm-can/
 
 ## Testing
 
+### Quick Start: Run All CI Tests Locally
+
 ```bash
-cargo test                                                                    # Unit tests
-cargo test --test attack_regression_tests -- --ignored --test-threads=1      # Attack detection tests
-cargo test --test access_control_regression_tests -- --ignored --test-threads=1  # Access control tests
+./run_ci_tests.sh
 ```
+
+This script runs the complete CI test suite (9 test categories) and provides colored output with pass/fail status. Use this before pushing to ensure all tests pass.
+
+### Individual Test Categories
+
+```bash
+# Formatting and linting
+cargo fmt -- --check
+cargo clippy -- -D warnings
+
+# Build
+cargo build --verbose
+
+# Unit tests (133 tests)
+cargo test --workspace --lib --verbose
+
+# Integration tests (14 tests)
+cargo test --workspace --test integration_tests --verbose
+
+# Regression tests (4 suites)
+cargo test --test attack_regression_tests -- --ignored --test-threads=1 --nocapture
+cargo test --test access_control_regression_tests -- --ignored --test-threads=1 --nocapture
+cargo test --test replay_protection_regression_tests -- --ignored --test-threads=1 --nocapture
+cargo test --package autonomous_vehicle_sim --test anomaly_ids_regression_tests -- --ignored --test-threads=1 --nocapture
+```
+
+**Total Test Count:** 159+ tests across all categories
 
 See [tests/README.md](tests/README.md) for details.
 
