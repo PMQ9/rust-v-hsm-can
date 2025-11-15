@@ -319,24 +319,17 @@ fn test_anomaly_ids_sigma_threshold_boundaries() {
 #[test]
 #[ignore]
 fn test_anomaly_ids_custom_thresholds() {
-    println!("\n=== Custom Sigma Thresholds Test ===\n");
+    println!("\n=== Anomaly Detection Sigma Thresholds Test ===\n");
 
-    // Create HSM and configure custom thresholds
-    let mut hsm = VirtualHSM::new("CUSTOM_THRESH_TEST".to_string(), 66666);
+    // Create HSM and start training with default thresholds
+    let mut hsm = VirtualHSM::new("THRESH_TEST".to_string(), 66666);
 
-    // Set custom thresholds: 2.0σ for warning, 4.0σ for attack
-    let custom_config = anomaly_detection::AnomalyConfig {
-        detection_threshold_sigma: 4.0,
-        warning_threshold_sigma: 2.0,
-        enabled: true,
-    };
+    // Start training with default thresholds (1.3σ warning, 3.0σ attack)
+    hsm.start_anomaly_training(20).unwrap();
 
-    hsm.start_anomaly_training_with_config(20, custom_config)
-        .unwrap();
-
-    println!("✓ Custom thresholds configured:");
-    println!("  • Warning threshold: 2.0σ");
-    println!("  • Attack threshold: 4.0σ");
+    println!("✓ Anomaly training started with default thresholds:");
+    println!("  • Warning threshold: 1.3σ (80% confidence)");
+    println!("  • Attack threshold: 3.0σ (99% confidence)");
 
     // Train with consistent data
     for _ in 0..50 {
@@ -347,7 +340,7 @@ fn test_anomaly_ids_custom_thresholds() {
     let baseline = hsm.finalize_anomaly_training().unwrap();
     hsm.activate_anomaly_detection(baseline);
 
-    println!("\nTesting graduated response with custom thresholds...");
+    println!("\nTesting graduated response with default thresholds...");
 
     // Test medium deviation
     let medium_dev = create_secured_frame(0x100, vec![80, 50, 50], "SENSOR_A");

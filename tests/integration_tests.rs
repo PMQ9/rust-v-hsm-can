@@ -147,13 +147,12 @@ async fn test_concurrent_multi_ecu_stress() {
 
     // Each ECU sends 10 messages concurrently
     let mut handles = Vec::new();
-    for (i, ecu) in ecus.iter().enumerate() {
-        let ecu_clone = ecu.clone();
+    for (i, ecu) in ecus.into_iter().enumerate() {
         let handle = tokio::spawn(async move {
             for j in 0..10 {
-                let can_id = CanId::Standard((0x100 + i as u32) % 0x7FF);
+                let can_id = CanId::Standard(((0x100 + i as u32) % 0x7FF) as u16);
                 let data = vec![j as u8];
-                ecu_clone.send_frame(can_id, data).await.unwrap();
+                ecu.send_frame(can_id, data).await.unwrap();
             }
         });
         handles.push(handle);

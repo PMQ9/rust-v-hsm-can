@@ -271,30 +271,29 @@ fn test_crc_error_threshold_boundary() {
     println!("  Testing exact CRC_ERROR_THRESHOLD = 5");
     println!("═══════════════════════════════════════════════════════\n");
 
-    use autonomous_vehicle_sim::error_handling::{AttackDetector, DetectorState};
-    use autonomous_vehicle_sim::hsm::VerifyError;
+    use autonomous_vehicle_sim::error_handling::{AttackDetector, SecurityState, ValidationError};
 
-    let mut detector = AttackDetector::new();
+    let mut detector = AttackDetector::new("TEST_ECU".to_string());
 
     // Test 1: 4 consecutive CRC errors (below threshold) -> Warning
     println!("→ Testing 4 CRC errors (below threshold)...");
     for i in 1..=4 {
-        detector.on_verification_error(&VerifyError::CrcMismatch);
+        detector.record_error(ValidationError::CrcMismatch, "ATTACKER");
         println!("  CRC error {}/5", i);
     }
     assert_eq!(
         detector.state(),
-        DetectorState::Warning,
+        SecurityState::Warning,
         "4 CRC errors should trigger Warning state"
     );
     println!("✓ PASS: 4 CRC errors = Warning state");
 
     // Test 2: 5th consecutive CRC error (at threshold) -> UnderAttack
     println!("\n→ Testing 5th CRC error (at threshold)...");
-    detector.on_verification_error(&VerifyError::CrcMismatch);
+    detector.record_error(ValidationError::CrcMismatch, "ATTACKER");
     assert_eq!(
         detector.state(),
-        DetectorState::UnderAttack,
+        SecurityState::UnderAttack,
         "5 CRC errors (at threshold) should trigger UnderAttack"
     );
     println!("✓ PASS: 5 CRC errors = UnderAttack state");
@@ -303,11 +302,11 @@ fn test_crc_error_threshold_boundary() {
     println!("\n→ Testing 6 CRC errors (above threshold)...");
     detector.reset();
     for i in 1..=6 {
-        detector.on_verification_error(&VerifyError::CrcMismatch);
+        detector.record_error(ValidationError::CrcMismatch, "ATTACKER");
     }
     assert_eq!(
         detector.state(),
-        DetectorState::UnderAttack,
+        SecurityState::UnderAttack,
         "6 CRC errors should trigger UnderAttack"
     );
     println!("✓ PASS: 6 CRC errors = UnderAttack state");
@@ -325,37 +324,36 @@ fn test_mac_error_threshold_boundary() {
     println!("  Testing exact MAC_ERROR_THRESHOLD = 3");
     println!("═══════════════════════════════════════════════════════\n");
 
-    use autonomous_vehicle_sim::error_handling::{AttackDetector, DetectorState};
-    use autonomous_vehicle_sim::hsm::{MacFailureReason, VerifyError};
+    use autonomous_vehicle_sim::error_handling::{AttackDetector, SecurityState, ValidationError};
 
-    let mut detector = AttackDetector::new();
+    let mut detector = AttackDetector::new("TEST_ECU".to_string());
 
     // Test 1: 1 MAC error (at warning threshold) -> Warning
     println!("→ Testing 1 MAC error (at warning threshold)...");
-    detector.on_verification_error(&VerifyError::MacMismatch(MacFailureReason::CryptoFailure));
+    detector.record_error(ValidationError::MacMismatch, "ATTACKER");
     assert_eq!(
         detector.state(),
-        DetectorState::Warning,
+        SecurityState::Warning,
         "1 MAC error should trigger Warning state (threshold/2 = 1)"
     );
     println!("✓ PASS: 1 MAC error = Warning state");
 
     // Test 2: 2 consecutive MAC errors (below attack threshold) -> Still Warning
     println!("\n→ Testing 2 MAC errors (below attack threshold)...");
-    detector.on_verification_error(&VerifyError::MacMismatch(MacFailureReason::CryptoFailure));
+    detector.record_error(ValidationError::MacMismatch, "ATTACKER");
     assert_eq!(
         detector.state(),
-        DetectorState::Warning,
+        SecurityState::Warning,
         "2 MAC errors should still be Warning"
     );
     println!("✓ PASS: 2 MAC errors = Warning state");
 
     // Test 3: 3rd consecutive MAC error (at threshold) -> UnderAttack
     println!("\n→ Testing 3rd MAC error (at threshold)...");
-    detector.on_verification_error(&VerifyError::MacMismatch(MacFailureReason::CryptoFailure));
+    detector.record_error(ValidationError::MacMismatch, "ATTACKER");
     assert_eq!(
         detector.state(),
-        DetectorState::UnderAttack,
+        SecurityState::UnderAttack,
         "3 MAC errors (at threshold) should trigger UnderAttack"
     );
     println!("✓ PASS: 3 MAC errors = UnderAttack state");
@@ -364,11 +362,11 @@ fn test_mac_error_threshold_boundary() {
     println!("\n→ Testing 4 MAC errors (above threshold)...");
     detector.reset();
     for i in 1..=4 {
-        detector.on_verification_error(&VerifyError::MacMismatch(MacFailureReason::CryptoFailure));
+        detector.record_error(ValidationError::MacMismatch, "ATTACKER");
     }
     assert_eq!(
         detector.state(),
-        DetectorState::UnderAttack,
+        SecurityState::UnderAttack,
         "4 MAC errors should trigger UnderAttack"
     );
     println!("✓ PASS: 4 MAC errors = UnderAttack state");
@@ -386,18 +384,17 @@ fn test_unsecured_frame_immediate_trigger() {
     println!("  Testing UNSECURED_FRAME_THRESHOLD = 1");
     println!("═══════════════════════════════════════════════════════\n");
 
-    use autonomous_vehicle_sim::error_handling::{AttackDetector, DetectorState};
-    use autonomous_vehicle_sim::hsm::VerifyError;
+    use autonomous_vehicle_sim::error_handling::{AttackDetector, SecurityState, ValidationError};
 
-    let mut detector = AttackDetector::new();
+    let mut detector = AttackDetector::new("TEST_ECU".to_string());
 
     // Test: Single unsecured frame should immediately trigger UnderAttack
     println!("→ Testing single unsecured frame...");
-    detector.on_verification_error(&VerifyError::UnsecuredFrame);
+    detector.record_error(ValidationError::UnsecuredFrame, "ATTACKER");
 
     assert_eq!(
         detector.state(),
-        DetectorState::UnderAttack,
+        SecurityState::UnderAttack,
         "Single unsecured frame should immediately trigger UnderAttack (threshold=1)"
     );
     println!("✓ PASS: Unsecured frame immediately triggered UnderAttack");
@@ -415,27 +412,26 @@ fn test_warning_state_threshold_boundaries() {
     println!("  Warning threshold = attack_threshold / 2");
     println!("═══════════════════════════════════════════════════════\n");
 
-    use autonomous_vehicle_sim::error_handling::{AttackDetector, DetectorState};
-    use autonomous_vehicle_sim::hsm::VerifyError;
+    use autonomous_vehicle_sim::error_handling::{AttackDetector, SecurityState, ValidationError};
 
     // Test 1: CRC warning threshold (5/2 = 2)
     println!("→ Testing CRC warning threshold (2 errors)...");
-    let mut detector = AttackDetector::new();
+    let mut detector = AttackDetector::new("TEST_ECU".to_string());
 
     // 1 error: should stay Normal
-    detector.on_verification_error(&VerifyError::CrcMismatch);
+    detector.record_error(ValidationError::CrcMismatch, "ATTACKER");
     assert_eq!(
         detector.state(),
-        DetectorState::Normal,
+        SecurityState::Normal,
         "1 CRC error should keep Normal state"
     );
     println!("  1 CRC error = Normal");
 
     // 2 errors: should trigger Warning
-    detector.on_verification_error(&VerifyError::CrcMismatch);
+    detector.record_error(ValidationError::CrcMismatch, "ATTACKER");
     assert_eq!(
         detector.state(),
-        DetectorState::Warning,
+        SecurityState::Warning,
         "2 CRC errors should trigger Warning (threshold/2)"
     );
     println!("✓ PASS: 2 CRC errors = Warning state");
@@ -444,11 +440,10 @@ fn test_warning_state_threshold_boundaries() {
     println!("\n→ Testing MAC warning threshold (1 error)...");
     detector.reset();
 
-    use autonomous_vehicle_sim::hsm::MacFailureReason;
-    detector.on_verification_error(&VerifyError::MacMismatch(MacFailureReason::CryptoFailure));
+    detector.record_error(ValidationError::MacMismatch, "ATTACKER");
     assert_eq!(
         detector.state(),
-        DetectorState::Warning,
+        SecurityState::Warning,
         "1 MAC error should trigger Warning (threshold/2 rounded = 1)"
     );
     println!("✓ PASS: 1 MAC error = Warning state");
