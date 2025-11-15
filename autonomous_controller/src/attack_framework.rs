@@ -135,9 +135,10 @@ impl AttackSimulator {
         loop {
             // Check duration limit
             if let Some(duration) = self.config.duration_secs
-                && start.elapsed().as_secs() >= duration {
-                    break;
-                }
+                && start.elapsed().as_secs() >= duration
+            {
+                break;
+            }
 
             // Inject fake sensor data
             let fake_frame = self.generate_fake_sensor_frame();
@@ -191,9 +192,10 @@ impl AttackSimulator {
         while let Some(frame) = captured_frames.pop_front() {
             // Check duration limit
             if let Some(duration) = self.config.duration_secs
-                && start.elapsed().as_secs() >= duration {
-                    break;
-                }
+                && start.elapsed().as_secs() >= duration
+            {
+                break;
+            }
 
             if writer.send_secured_frame(frame.clone()).await.is_err() {
                 self.stats.errors_encountered += 1;
@@ -220,9 +222,10 @@ impl AttackSimulator {
         loop {
             // Check duration limit
             if let Some(duration) = self.config.duration_secs
-                && start.elapsed().as_secs() >= duration {
-                    break;
-                }
+                && start.elapsed().as_secs() >= duration
+            {
+                break;
+            }
 
             // High-priority CAN IDs (low values have higher priority)
             let flood_id = CanId::Standard(rng.gen_range(0x001..=0x010));
@@ -256,9 +259,10 @@ impl AttackSimulator {
         loop {
             // Check duration limit
             if let Some(duration) = self.config.duration_secs
-                && start.elapsed().as_secs() >= duration {
-                    break;
-                }
+                && start.elapsed().as_secs() >= duration
+            {
+                break;
+            }
 
             // Send frames pretending to be a legitimate ECU
             let spoofed_name = spoofed_names[name_idx % spoofed_names.len()];
@@ -290,9 +294,10 @@ impl AttackSimulator {
         loop {
             // Check duration limit
             if let Some(duration) = self.config.duration_secs
-                && start.elapsed().as_secs() >= duration {
-                    break;
-                }
+                && start.elapsed().as_secs() >= duration
+            {
+                break;
+            }
 
             let should_malform = rng.gen_range(0..100) < self.config.malform_percentage;
 
