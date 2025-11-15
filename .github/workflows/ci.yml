@@ -34,56 +34,138 @@ jobs:
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Check formatting
+      id: fmt
       run: cargo fmt -- --check
+      continue-on-error: true
 
     - name: Run clippy
+      id: clippy
       run: cargo clippy -- -D warnings
+      continue-on-error: true
 
     - name: Build
+      id: build
       run: cargo build --verbose
+      continue-on-error: true
 
     - name: Run unit tests
-      run: cargo test --workspace --lib --verbose
+      id: unit-tests
+      run: cargo test --workspace --lib --verbose 2>&1 | tee unit-tests.log
+      continue-on-error: true
+
+    - name: Run integration tests
+      id: integration-tests
+      run: cargo test --workspace --test integration_tests --verbose 2>&1 | tee integration-tests.log
+      continue-on-error: true
 
     - name: Run injection attack regression tests
-      run: cargo test --package rust-v-hsm-can --test attack_regression_tests -- --ignored --test-threads=1 --nocapture
+      id: attack-tests
+      run: cargo test --package rust-v-hsm-can --test attack_regression_tests -- --ignored --test-threads=1 --nocapture 2>&1 | tee attack-tests.log
+      continue-on-error: true
 
     - name: Run access control regression tests
-      run: cargo test --package rust-v-hsm-can --test access_control_regression_tests -- --ignored --test-threads=1 --nocapture
+      id: access-tests
+      run: cargo test --package rust-v-hsm-can --test access_control_regression_tests -- --ignored --test-threads=1 --nocapture 2>&1 | tee access-tests.log
+      continue-on-error: true
 
     - name: Run replay protection regression tests
-      run: cargo test --package rust-v-hsm-can --test replay_protection_regression_tests -- --ignored --test-threads=1 --nocapture
+      id: replay-tests
+      run: cargo test --package rust-v-hsm-can --test replay_protection_regression_tests -- --ignored --test-threads=1 --nocapture 2>&1 | tee replay-tests.log
+      continue-on-error: true
 
     - name: Run anomaly IDS regression tests
-      run: cargo test --package autonomous_vehicle_sim --test anomaly_ids_regression_tests -- --ignored --test-threads=1 --nocapture
+      id: anomaly-tests
+      run: cargo test --package autonomous_vehicle_sim --test anomaly_ids_regression_tests -- --ignored --test-threads=1 --nocapture 2>&1 | tee anomaly-tests.log
+      continue-on-error: true
 
-    - name: Test Summary
+    - name: Generate Test Summary
       if: always()
       run: |
-        echo ""
-        echo "═══════════════════════════════════════════════════════════════════════════"
-        echo "                        RUST V-HSM CAN - CI TEST SUMMARY"
-        echo "═══════════════════════════════════════════════════════════════════════════"
-        echo ""
-        echo "┌─────────────────────────────────────────────┬──────────┬─────────────────┐"
-        echo "│ Test Category                               │ Status   │ Description     │"
-        echo "├─────────────────────────────────────────────┼──────────┼─────────────────┤"
-        echo "│ Code Formatting (rustfmt)                   │   PASS   │ Style checks    │"
-        echo "│ Linting (clippy)                            │   PASS   │ Code quality    │"
-        echo "│ Build                                       │   PASS   │ Compilation     │"
-        echo "│ Unit Tests (51 tests)                       │   PASS   │ Core logic      │"
-        echo "│ MAC/CRC Attack Tests                        │   PASS   │ Injection def.  │"
-        echo "│ Access Control Tests                        │   PASS   │ Authorization   │"
-        echo "│ Replay Protection Tests                     │   PASS   │ Replay defense  │"
-        echo "│ Anomaly IDS Tests                           │   PASS   │ Behavioral IDS  │"
-        echo "└─────────────────────────────────────────────┴──────────┴─────────────────┘"
-        echo ""
-        echo "Security Features Tested:"
-        echo "  • Message Authentication (MAC/HMAC-SHA256)"
-        echo "  • Integrity Verification (CRC32)"
-        echo "  • CAN ID Access Control (TX/RX Whitelists)"
-        echo "  • Replay Attack Prevention (Sliding Window)"
-        echo "  • Rate Limiting & DoS Prevention"
-        echo "  • Anomaly-Based Intrusion Detection"
-        echo ""
-        echo "═══════════════════════════════════════════════════════════════════════════"
+        echo "# Test Results Summary" > test-summary.md
+        echo "" >> test-summary.md
+
+        # Count test results
+        UNIT_TESTS=$(grep -oP "test result:.*?\K\d+(?= passed)" unit-tests.log 2>/dev/null || echo "0")
+        UNIT_FAILED=$(grep -oP "test result:.*?(\d+) failed" unit-tests.log | grep -oP "\d+" 2>/dev/null || echo "0")
+
+        INTEGRATION_TESTS=$(grep -oP "test result:.*?\K\d+(?= passed)" integration-tests.log 2>/dev/null || echo "0")
+        INTEGRATION_FAILED=$(grep -oP "test result:.*?(\d+) failed" integration-tests.log | grep -oP "\d+" 2>/dev/null || echo "0")
+
+        ATTACK_TESTS=$(grep -c "Test PASSED" attack-tests.log 2>/dev/null || echo "0")
+        ACCESS_TESTS=$(grep -c "Test PASSED" access-tests.log 2>/dev/null || echo "0")
+        REPLAY_TESTS=$(grep -c "Test PASSED" replay-tests.log 2>/dev/null || echo "0")
+        ANOMALY_TESTS=$(grep -c "Test Passed" anomaly-tests.log 2>/dev/null || echo "0")
+
+        # Calculate totals
+        TOTAL_TESTS=$((UNIT_TESTS + INTEGRATION_TESTS + ATTACK_TESTS + ACCESS_TESTS + REPLAY_TESTS + ANOMALY_TESTS))
+        TOTAL_FAILED=$((UNIT_FAILED + INTEGRATION_FAILED))
+
+        # Determine status indicators
+        FMT_STATUS="${{ steps.fmt.outcome == 'success' && '✓ PASS' || '✗ FAIL' }}"
+        CLIPPY_STATUS="${{ steps.clippy.outcome == 'success' && '✓ PASS' || '✗ FAIL' }}"
+        BUILD_STATUS="${{ steps.build.outcome == 'success' && '✓ PASS' || '✗ FAIL' }}"
+        UNIT_STATUS="${{ steps.unit-tests.outcome == 'success' && '✓ PASS' || '✗ FAIL' }}"
+        INTEGRATION_STATUS="${{ steps.integration-tests.outcome == 'success' && '✓ PASS' || '✗ FAIL' }}"
+        ATTACK_STATUS="${{ steps.attack-tests.outcome == 'success' && '✓ PASS' || '✗ FAIL' }}"
+        ACCESS_STATUS="${{ steps.access-tests.outcome == 'success' && '✓ PASS' || '✗ FAIL' }}"
+        REPLAY_STATUS="${{ steps.replay-tests.outcome == 'success' && '✓ PASS' || '✗ FAIL' }}"
+        ANOMALY_STATUS="${{ steps.anomaly-tests.outcome == 'success' && '✓ PASS' || '✗ FAIL' }}"
+
+        echo "## CI Pipeline Results" >> test-summary.md
+        echo "" >> test-summary.md
+        echo "| Test Category | Status | Count | Description |" >> test-summary.md
+        echo "|---------------|--------|-------|-------------|" >> test-summary.md
+        echo "| Code Formatting | $FMT_STATUS | - | rustfmt style checks |" >> test-summary.md
+        echo "| Linting | $CLIPPY_STATUS | - | clippy warnings |" >> test-summary.md
+        echo "| Build | $BUILD_STATUS | - | Compilation |" >> test-summary.md
+        echo "| Unit Tests | $UNIT_STATUS | $UNIT_TESTS | Core functionality |" >> test-summary.md
+        echo "| Integration Tests | $INTEGRATION_STATUS | $INTEGRATION_TESTS | End-to-end scenarios |" >> test-summary.md
+        echo "| Attack Detection | $ATTACK_STATUS | $ATTACK_TESTS | MAC/CRC injection |" >> test-summary.md
+        echo "| Access Control | $ACCESS_STATUS | $ACCESS_TESTS | Authorization |" >> test-summary.md
+        echo "| Replay Protection | $REPLAY_STATUS | $REPLAY_TESTS | Replay defense |" >> test-summary.md
+        echo "| Anomaly IDS | $ANOMALY_STATUS | $ANOMALY_TESTS | Behavioral detection |" >> test-summary.md
+        echo "" >> test-summary.md
+        echo "**Total Tests Executed:** $TOTAL_TESTS" >> test-summary.md
+        echo "**Total Failures:** $TOTAL_FAILED" >> test-summary.md
+        echo "" >> test-summary.md
+        echo "## Security Features Tested" >> test-summary.md
+        echo "" >> test-summary.md
+        echo "- Message Authentication (HMAC-SHA256)" >> test-summary.md
+        echo "- Data Integrity (CRC32)" >> test-summary.md
+        echo "- CAN ID Access Control (TX/RX Whitelists)" >> test-summary.md
+        echo "- Replay Attack Prevention (Sliding Window + Timestamps)" >> test-summary.md
+        echo "- Attack Detection (Threshold-Based State Machine)" >> test-summary.md
+        echo "- Rate Limiting & DoS Prevention" >> test-summary.md
+        echo "- Anomaly-Based Intrusion Detection (Statistical Profiling)" >> test-summary.md
+        echo "- Secure Firmware Updates & Baseline Persistence" >> test-summary.md
+        echo "" >> test-summary.md
+
+        # Output to console
+        cat test-summary.md
+
+    - name: Check for failures
+      if: always()
+      run: |
+        FAILED=0
+        if [ "${{ steps.fmt.outcome }}" != "success" ]; then FAILED=1; fi
+        if [ "${{ steps.clippy.outcome }}" != "success" ]; then FAILED=1; fi
+        if [ "${{ steps.build.outcome }}" != "success" ]; then FAILED=1; fi
+        if [ "${{ steps.unit-tests.outcome }}" != "success" ]; then FAILED=1; fi
+        if [ "${{ steps.integration-tests.outcome }}" != "success" ]; then FAILED=1; fi
+        if [ "${{ steps.attack-tests.outcome }}" != "success" ]; then FAILED=1; fi
+        if [ "${{ steps.access-tests.outcome }}" != "success" ]; then FAILED=1; fi
+        if [ "${{ steps.replay-tests.outcome }}" != "success" ]; then FAILED=1; fi
+        if [ "${{ steps.anomaly-tests.outcome }}" != "success" ]; then FAILED=1; fi
+
+        if [ $FAILED -eq 1 ]; then
+          echo ""
+          echo "═══════════════════════════════════════════════════════"
+          echo "  CI FAILED - One or more tests did not pass"
+          echo "═══════════════════════════════════════════════════════"
+          exit 1
+        else
+          echo ""
+          echo "═══════════════════════════════════════════════════════"
+          echo "  ALL TESTS PASSED"
+          echo "═══════════════════════════════════════════════════════"
+        fi

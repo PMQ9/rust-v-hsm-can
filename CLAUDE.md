@@ -288,6 +288,16 @@ Registration:
 
 **CRITICAL**: After making ANY code changes, you MUST run the full CI test suite to ensure nothing is broken.
 
+### Quick Start: Run Full CI Suite
+
+```bash
+./run_ci_tests.sh
+```
+
+This single command runs all 9 test categories (formatting, linting, build, unit tests, integration tests, 4 regression suites) with colored output and comprehensive summary. **Use this before committing any changes.**
+
+### Manual Test Execution (if needed)
+
 Run all CI tests in order:
 ```bash
 # 1. Format check (fails fast)
@@ -299,15 +309,20 @@ cargo clippy -- -D warnings
 # 3. Build
 cargo build --verbose
 
-# 4. Unit tests
+# 4. Unit tests (133 tests)
 cargo test --workspace --lib --verbose
 
-# 5. Regression tests (run all four)
+# 5. Integration tests (14 tests)
+cargo test --workspace --test integration_tests --verbose
+
+# 6. Regression tests (run all four suites)
 cargo test --package rust-v-hsm-can --test attack_regression_tests -- --ignored --test-threads=1 --nocapture
 cargo test --package rust-v-hsm-can --test access_control_regression_tests -- --ignored --test-threads=1 --nocapture
 cargo test --package rust-v-hsm-can --test replay_protection_regression_tests -- --ignored --test-threads=1 --nocapture
 cargo test --package autonomous_vehicle_sim --test anomaly_ids_regression_tests -- --ignored --test-threads=1 --nocapture
 ```
+
+**Total Test Count:** 159+ tests
 
 **DO NOT** consider your work complete until all CI tests pass. If any test fails, fix it before moving on.
 
