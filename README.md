@@ -234,7 +234,7 @@ See [tests/README.md](tests/README.md) for details.
 
 **Phase 3 - Architecture:**
 - [ ] Security gateway ECU (zone segmentation)
-- [ ] Cryptographic key rotation (session key lifecycle)
+- [x] Cryptographic key rotation (session key lifecycle)
 - [ ] Enhanced security dashboard (real-time threat metrics)
 
 **Phase 4 - Advanced:**

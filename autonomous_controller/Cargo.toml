@@ -19,6 +19,7 @@ sha2 = "0.10"
 aes = "0.8"
 cbc = { version = "0.1", features = ["alloc"] }
 crc = "3.0"
+hkdf = "0.12"
 
 # Main launcher
 [[bin]]

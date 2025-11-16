@@ -61,6 +61,9 @@ pub struct VirtualHSM {
 
     /// Anomaly detector for behavioral IDS (None if disabled)
     anomaly_detector: Option<crate::anomaly_detection::AnomalyDetector>,
+
+    /// Key rotation manager for session key lifecycle (None if disabled)
+    key_rotation_manager: Option<super::key_rotation::KeyRotationManager>,
 }
 
 impl VirtualHSM {
@@ -94,7 +97,8 @@ impl VirtualHSM {
             can_id_permissions: None,
             replay_protection_state: HashMap::new(),
             replay_config: ReplayProtectionConfig::default(),
-            anomaly_detector: None, // Disabled by default
+            anomaly_detector: None,     // Disabled by default
+            key_rotation_manager: None, // Disabled by default
         };
 
         // Generate deterministic keys based on seed
@@ -209,7 +213,9 @@ impl VirtualHSM {
         &self.symmetric_comm_key
     }
 
-    /// Get MAC verification key for a specific ECU (internal use)
+    /// Get MAC verification key for a specific ECU (internal use, legacy)
+    /// Note: Prefer using get_verification_key_by_version() for key rotation support
+    #[allow(dead_code)]
     pub(super) fn get_mac_verification_key(&self, ecu_name: &str) -> Option<&[u8; 32]> {
         self.mac_verification_keys.get(ecu_name)
     }
@@ -242,11 +248,13 @@ impl VirtualHSM {
     // ========================================================================
 
     /// Generate Message Authentication Code (MAC) using HMAC-SHA256
-    pub fn generate_mac(&self, data: &[u8], session_counter: u64) -> [u8; 32] {
+    /// Uses session key if key rotation is enabled, otherwise uses symmetric_comm_key
+    pub fn generate_mac(&mut self, data: &[u8], session_counter: u64) -> [u8; 32] {
+        let key = self.get_mac_generation_key();
         crypto::generate_mac(
             data,
             session_counter,
-            &self.symmetric_comm_key,
+            &key,
             self.performance_metrics.as_ref(),
         )
     }
@@ -590,12 +598,163 @@ impl VirtualHSM {
     pub fn anomaly_baseline(&self) -> Option<&crate::anomaly_detection::AnomalyBaseline> {
         self.anomaly_detector.as_ref().and_then(|d| d.baseline())
     }
+
+    // ========================================================================
+    // Key Rotation Methods
+    // ========================================================================
+
+    /// Enable key rotation with specified policy
+    pub fn enable_key_rotation(
+        &mut self,
+        policy: super::key_rotation::KeyRotationPolicy,
+    ) -> Result<(), String> {
+        let manager = super::key_rotation::KeyRotationManager::new(
+            self.master_key,
+            self.ecu_id.clone(),
+            policy,
+        );
+
+        self.key_rotation_manager = Some(manager);
+
+        println!(
+            "{} Key rotation enabled for {}",
+            "→".cyan(),
+            self.ecu_id.bright_white()
+        );
+
+        Ok(())
+    }
+
+    /// Disable key rotation (revert to static symmetric_comm_key)
+    pub fn disable_key_rotation(&mut self) {
+        self.key_rotation_manager = None;
+    }
+
+    /// Check if key rotation is enabled
+    pub fn is_key_rotation_enabled(&self) -> bool {
+        self.key_rotation_manager.is_some()
+    }
+
+    /// Get current active session key version (0 = legacy key, >0 = session key)
+    pub fn get_current_key_version(&self) -> u32 {
+        if let Some(manager) = &self.key_rotation_manager {
+            manager.current_key_id()
+        } else {
+            0 // Legacy mode: use symmetric_comm_key (version 0)
+        }
+    }
+
+    /// Get key material for MAC generation (session key if rotation enabled, else symmetric_comm_key)
+    pub fn get_mac_generation_key(&mut self) -> [u8; 32] {
+        if let Some(manager) = &mut self.key_rotation_manager {
+            // Check if rotation needed (before mutably borrowing key)
+            let should_rotate = if let Some(key) = manager.get_active_key() {
+                manager.policy().should_rotate(key)
+            } else {
+                false
+            };
+
+            if should_rotate {
+                // Auto-rotate
+                manager.rotate_key();
+            }
+
+            // Now get the key (possibly new after rotation) and increment counter
+            if let Some(key) = manager.get_active_key_mut() {
+                key.increment_frame_count();
+                return key.key_material;
+            }
+        }
+
+        // Fallback: use legacy symmetric_comm_key
+        self.symmetric_comm_key
+    }
+
+    /// Get verification key by version (for RX - supports old keys in grace period)
+    pub fn get_verification_key_by_version(
+        &self,
+        source_ecu: &str,
+        key_version: u32,
+    ) -> Option<[u8; 32]> {
+        // If key_version is 0, use legacy verification keys
+        if key_version == 0 {
+            return self.mac_verification_keys.get(source_ecu).copied();
+        }
+
+        // Otherwise, look up session key from rotation manager
+        // Note: This assumes we have the sender's key rotation manager or shared keys
+        // For now, we'll use the receiver's own rotation manager (assumes synchronized rotation)
+        if let Some(manager) = &self.key_rotation_manager {
+            if let Some(session_key) = manager.get_key_by_id(key_version) {
+                // Check if key is still valid for RX
+                if session_key.is_valid_for_rx() {
+                    return Some(session_key.key_material);
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Manually trigger key rotation
+    pub fn rotate_key(&mut self) -> Result<u32, String> {
+        let manager = self
+            .key_rotation_manager
+            .as_mut()
+            .ok_or("Key rotation not enabled")?;
+
+        let new_key_id = manager.rotate_key();
+        Ok(new_key_id)
+    }
+
+    /// Get reference to key rotation manager (for advanced use)
+    pub fn key_rotation_manager(&self) -> Option<&super::key_rotation::KeyRotationManager> {
+        self.key_rotation_manager.as_ref()
+    }
+
+    /// Get mutable reference to key rotation manager (for advanced use)
+    pub fn key_rotation_manager_mut(
+        &mut self,
+    ) -> Option<&mut super::key_rotation::KeyRotationManager> {
+        self.key_rotation_manager.as_mut()
+    }
+
+    /// Update key rotation policy
+    pub fn set_key_rotation_policy(&mut self, policy: super::key_rotation::KeyRotationPolicy) {
+        if let Some(manager) = &mut self.key_rotation_manager {
+            manager.set_policy(policy);
+        }
+    }
+
+    /// Import a session key from another ECU (for key distribution)
+    pub fn import_session_key(&mut self, key_id: u32, encrypted_key: &[u8]) -> Result<(), String> {
+        let manager = self
+            .key_rotation_manager
+            .as_mut()
+            .ok_or("Key rotation not enabled")?;
+
+        manager.import_key(key_id, encrypted_key, &self.key_encryption_key)
+    }
+
+    /// Export current session key for distribution (encrypted)
+    pub fn export_session_key(&self) -> Result<Vec<u8>, String> {
+        let manager = self
+            .key_rotation_manager
+            .as_ref()
+            .ok_or("Key rotation not enabled")?;
+
+        let key_id = manager.current_key_id();
+        manager
+            .export_key(key_id, &self.key_encryption_key)
+            .ok_or_else(|| "Failed to export key".to_string())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::hsm::errors::VerifyError;
+    use crate::hsm::key_rotation;
     use crate::hsm::secured_frame::SecuredCanFrame;
 
     #[test]
@@ -844,6 +1003,116 @@ mod tests {
         assert!(
             result.is_ok(),
             "When using verify() instead of verify_with_authorization(), RX whitelist bypassed: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_key_rotation_integration() {
+        // Test that SecuredCanFrame creation uses session keys when rotation enabled
+        let mut hsm = VirtualHSM::new("TEST_ECU".to_string(), 12345);
+
+        // Enable key rotation with short thresholds for testing
+        let policy = key_rotation::KeyRotationPolicy {
+            time_based_enabled: false,
+            rotation_interval_secs: 300,
+            counter_based_enabled: true,
+            rotation_frame_threshold: 5, // Rotate after 5 frames
+            grace_period_secs: 60,
+            max_key_history: 10,
+        };
+
+        hsm.enable_key_rotation(policy).unwrap();
+
+        // Self-register for verification
+        hsm.add_trusted_ecu("TEST_ECU".to_string(), *hsm.get_symmetric_key());
+
+        // Create and self-verify frames with initial session key (key_version = 1)
+        for i in 0..3 {
+            let frame = SecuredCanFrame::new(
+                crate::types::CanId::Standard(0x100),
+                vec![i, i + 1, i + 2, i + 3],
+                "TEST_ECU".to_string(),
+                &mut hsm,
+            )
+            .expect("Failed to create frame");
+
+            assert_eq!(frame.key_version, 1, "Should use initial session key");
+
+            // Self-verification should work (same HSM)
+            let result = frame.verify(&mut hsm);
+            assert!(
+                result.is_ok(),
+                "Frame self-verification should succeed with key rotation: {:?}",
+                result
+            );
+        }
+
+        // Create 2 more frames to trigger rotation (threshold = 5)
+        for i in 3..5 {
+            let _frame = SecuredCanFrame::new(
+                crate::types::CanId::Standard(0x100),
+                vec![i, i + 1, i + 2, i + 3],
+                "TEST_ECU".to_string(),
+                &mut hsm,
+            )
+            .expect("Failed to create frame");
+        }
+
+        // Next frame should use new session key (key_version = 2)
+        let frame_after_rotation = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![10, 11, 12, 13],
+            "TEST_ECU".to_string(),
+            &mut hsm,
+        )
+        .expect("Failed to create frame");
+
+        assert_eq!(
+            frame_after_rotation.key_version, 2,
+            "Should use new session key after rotation"
+        );
+
+        // Self-verification should still work after rotation
+        let result = frame_after_rotation.verify(&mut hsm);
+        assert!(
+            result.is_ok(),
+            "Frame self-verification should succeed after rotation: {:?}",
+            result
+        );
+
+        // Verify we're on key_version 2
+        assert_eq!(hsm.get_current_key_version(), 2);
+    }
+
+    #[test]
+    fn test_key_rotation_disabled_uses_legacy_key() {
+        // Test that when key rotation is disabled, key_version = 0 (legacy mode)
+        let mut sender_hsm = VirtualHSM::new("SENDER".to_string(), 12345);
+        let mut receiver_hsm = VirtualHSM::new("RECEIVER".to_string(), 12345);
+
+        // Do NOT enable key rotation (use legacy symmetric_comm_key)
+        assert!(!sender_hsm.is_key_rotation_enabled());
+
+        // Register sender's MAC key with receiver
+        receiver_hsm.add_trusted_ecu("SENDER".to_string(), *sender_hsm.get_symmetric_key());
+
+        // Create frame with legacy key
+        let frame = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![1, 2, 3, 4],
+            "SENDER".to_string(),
+            &mut sender_hsm,
+        )
+        .expect("Failed to create frame");
+
+        assert_eq!(frame.key_version, 0, "Should use legacy key (version 0)");
+
+        // Verification should work
+        let result = frame.verify(&mut receiver_hsm);
+        assert!(
+            result.is_ok(),
+            "Frame verification should succeed with legacy key: {:?}",
             result
         );
     }

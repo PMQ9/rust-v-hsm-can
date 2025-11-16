@@ -8,6 +8,7 @@ mod crypto;
 pub mod core;
 pub mod errors;
 pub mod firmware;
+pub mod key_rotation;
 pub mod performance;
 pub mod replay;
 pub mod secured_frame;
@@ -16,6 +17,9 @@ pub mod secured_frame;
 pub use core::VirtualHSM;
 pub use errors::{MacFailureReason, ReplayError, VerifyError};
 pub use firmware::SignedFirmware;
+pub use key_rotation::{
+    KeyRotationManager, KeyRotationPolicy, KeyState, SessionKey, derive_session_key_hkdf,
+};
 pub use performance::{PerformanceMetrics, PerformanceSnapshot};
 pub use replay::{ReplayProtectionConfig, ReplayProtectionState};
 pub use secured_frame::SecuredCanFrame;
@@ -180,6 +184,7 @@ mod tests {
             mac: [0u8; 32], // All zeros = unsecured
             crc: 0,
             session_counter: 0,
+            key_version: 0,
         };
 
         let result = frame.verify(&mut receiver_hsm);

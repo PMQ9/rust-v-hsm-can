@@ -250,6 +250,7 @@ async fn handle_client(
                     mac: [0u8; 32], // No MAC for legacy frames
                     crc: 0,         // No CRC for legacy frames
                     session_counter: 0,
+                    key_version: 0,
                 };
 
                 if let Err(e) = tx.send(NetMessage::SecuredCanFrame(secured_frame)) {
