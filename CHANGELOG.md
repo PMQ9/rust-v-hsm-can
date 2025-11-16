@@ -1,4 +1,14 @@
 # Changelog
+## 2025-11-16
+
+### Critical Bug Fix: Key Rotation
+- Fixed critical MAC generation bug in SecuredCanFrame::new() that bypassed key rotation system
+- Bug: Was using hsm.get_symmetric_key() instead of hsm.generate_mac(), causing frames to always use legacy key
+- Impact: Key rotation would fail verification (key_version mismatch)
+- Fix: Changed to use hsm.generate_mac() which automatically selects session key when rotation enabled
+- Added 2 integration tests: test_key_rotation_integration, test_key_rotation_disabled_uses_legacy_key
+- All 200 unit tests passing (up from 198)
+
 ## 2025-11-15
 
 ### Security Fixes

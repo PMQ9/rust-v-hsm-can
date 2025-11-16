@@ -754,6 +754,7 @@ impl VirtualHSM {
 mod tests {
     use super::*;
     use crate::hsm::errors::VerifyError;
+    use crate::hsm::key_rotation;
     use crate::hsm::secured_frame::SecuredCanFrame;
 
     #[test]
@@ -1002,6 +1003,116 @@ mod tests {
         assert!(
             result.is_ok(),
             "When using verify() instead of verify_with_authorization(), RX whitelist bypassed: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_key_rotation_integration() {
+        // Test that SecuredCanFrame creation uses session keys when rotation enabled
+        let mut hsm = VirtualHSM::new("TEST_ECU".to_string(), 12345);
+
+        // Enable key rotation with short thresholds for testing
+        let policy = key_rotation::KeyRotationPolicy {
+            time_based_enabled: false,
+            rotation_interval_secs: 300,
+            counter_based_enabled: true,
+            rotation_frame_threshold: 5, // Rotate after 5 frames
+            grace_period_secs: 60,
+            max_key_history: 10,
+        };
+
+        hsm.enable_key_rotation(policy).unwrap();
+
+        // Self-register for verification
+        hsm.add_trusted_ecu("TEST_ECU".to_string(), *hsm.get_symmetric_key());
+
+        // Create and self-verify frames with initial session key (key_version = 1)
+        for i in 0..3 {
+            let frame = SecuredCanFrame::new(
+                crate::types::CanId::Standard(0x100),
+                vec![i, i + 1, i + 2, i + 3],
+                "TEST_ECU".to_string(),
+                &mut hsm,
+            )
+            .expect("Failed to create frame");
+
+            assert_eq!(frame.key_version, 1, "Should use initial session key");
+
+            // Self-verification should work (same HSM)
+            let result = frame.verify(&mut hsm);
+            assert!(
+                result.is_ok(),
+                "Frame self-verification should succeed with key rotation: {:?}",
+                result
+            );
+        }
+
+        // Create 2 more frames to trigger rotation (threshold = 5)
+        for i in 3..5 {
+            let _frame = SecuredCanFrame::new(
+                crate::types::CanId::Standard(0x100),
+                vec![i, i + 1, i + 2, i + 3],
+                "TEST_ECU".to_string(),
+                &mut hsm,
+            )
+            .expect("Failed to create frame");
+        }
+
+        // Next frame should use new session key (key_version = 2)
+        let frame_after_rotation = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![10, 11, 12, 13],
+            "TEST_ECU".to_string(),
+            &mut hsm,
+        )
+        .expect("Failed to create frame");
+
+        assert_eq!(
+            frame_after_rotation.key_version, 2,
+            "Should use new session key after rotation"
+        );
+
+        // Self-verification should still work after rotation
+        let result = frame_after_rotation.verify(&mut hsm);
+        assert!(
+            result.is_ok(),
+            "Frame self-verification should succeed after rotation: {:?}",
+            result
+        );
+
+        // Verify we're on key_version 2
+        assert_eq!(hsm.get_current_key_version(), 2);
+    }
+
+    #[test]
+    fn test_key_rotation_disabled_uses_legacy_key() {
+        // Test that when key rotation is disabled, key_version = 0 (legacy mode)
+        let mut sender_hsm = VirtualHSM::new("SENDER".to_string(), 12345);
+        let mut receiver_hsm = VirtualHSM::new("RECEIVER".to_string(), 12345);
+
+        // Do NOT enable key rotation (use legacy symmetric_comm_key)
+        assert!(!sender_hsm.is_key_rotation_enabled());
+
+        // Register sender's MAC key with receiver
+        receiver_hsm.add_trusted_ecu("SENDER".to_string(), *sender_hsm.get_symmetric_key());
+
+        // Create frame with legacy key
+        let frame = SecuredCanFrame::new(
+            crate::types::CanId::Standard(0x100),
+            vec![1, 2, 3, 4],
+            "SENDER".to_string(),
+            &mut sender_hsm,
+        )
+        .expect("Failed to create frame");
+
+        assert_eq!(frame.key_version, 0, "Should use legacy key (version 0)");
+
+        // Verification should work
+        let result = frame.verify(&mut receiver_hsm);
+        assert!(
+            result.is_ok(),
+            "Frame verification should succeed with legacy key: {:?}",
             result
         );
     }

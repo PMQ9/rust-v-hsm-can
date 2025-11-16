@@ -70,12 +70,8 @@ impl SecuredCanFrame {
         mac_data.extend_from_slice(source.as_bytes());
 
         // Calculate MAC and CRC
-        let mac = crypto::generate_mac(
-            &mac_data,
-            session_counter,
-            hsm.get_symmetric_key(),
-            hsm.performance_metrics_ref(),
-        );
+        // Use hsm.generate_mac() which automatically uses session key if rotation enabled
+        let mac = hsm.generate_mac(&mac_data, session_counter);
         let crc = crypto::calculate_crc(&mac_data, hsm.performance_metrics_ref());
 
         // Record performance metrics
