@@ -111,6 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 mac: [0u8; 32], // Invalid MAC (zeros won't match valid HMAC)
                 crc: valid_crc, // CORRECT CRC so it passes CRC check
                 session_counter: frame_num as u64,
+                key_version: 0,
             };
 
             writer.send_secured_frame(malicious_frame).await?;

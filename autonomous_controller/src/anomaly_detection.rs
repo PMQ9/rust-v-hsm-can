@@ -730,6 +730,7 @@ mod tests {
             session_counter: 0,
             mac: [0; 32],
             crc: 0,
+            key_version: 0,
         }
     }
 

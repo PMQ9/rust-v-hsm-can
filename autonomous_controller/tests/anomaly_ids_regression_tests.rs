@@ -17,6 +17,7 @@ fn create_secured_frame(can_id: u32, data: Vec<u8>, source: &str) -> hsm::Secure
         session_counter: 0,
         mac: [0; 32],
         crc: 0,
+        key_version: 0,
     }
 }
 

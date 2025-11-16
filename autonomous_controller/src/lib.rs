@@ -22,7 +22,10 @@ pub use baseline_persistence::{SignedBaseline, load_baseline, save_baseline};
 pub use can_bus::VirtualCanBus;
 pub use ecu::Ecu;
 pub use error_handling::{AttackDetector, SecurityState, ValidationError};
-pub use hsm::{SecuredCanFrame, SignedFirmware, VirtualHSM};
+pub use hsm::{
+    KeyRotationManager, KeyRotationPolicy, KeyState, SecuredCanFrame, SessionKey, SignedFirmware,
+    VirtualHSM, derive_session_key_hkdf,
+};
 pub use network::{BusClient, BusReader, BusWriter, NetMessage};
 pub use protected_memory::{FirmwareInfo, ProtectedMemory};
 pub use rate_limiter::RateLimiter;

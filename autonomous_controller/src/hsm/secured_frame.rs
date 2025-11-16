@@ -28,6 +28,10 @@ pub struct SecuredCanFrame {
 
     /// Session counter for anti-replay protection
     pub session_counter: u64,
+
+    /// Session key version/ID used for MAC generation (0 = legacy key)
+    #[serde(default)]
+    pub key_version: u32,
 }
 
 impl SecuredCanFrame {
@@ -82,6 +86,9 @@ impl SecuredCanFrame {
             m.frame_create_time_us += elapsed;
         }
 
+        // Get current key version from HSM (0 if key rotation not enabled)
+        let key_version = hsm.get_current_key_version();
+
         Ok(Self {
             can_id,
             data,
@@ -90,6 +97,7 @@ impl SecuredCanFrame {
             mac,
             crc,
             session_counter,
+            key_version,
         })
     }
 
@@ -118,18 +126,18 @@ impl SecuredCanFrame {
         }
 
         // Verify MAC (cryptographic check)
-        // Get the MAC key for the source ECU
-        let verification_key =
-            hsm.get_mac_verification_key(&self.source)
-                .ok_or(VerifyError::MacMismatch(
-                    super::errors::MacFailureReason::NoKeyRegistered,
-                ))?;
+        // Get the MAC key for the source ECU (based on key_version)
+        let verification_key = hsm
+            .get_verification_key_by_version(&self.source, self.key_version)
+            .ok_or(VerifyError::MacMismatch(
+                super::errors::MacFailureReason::NoKeyRegistered,
+            ))?;
 
         crypto::verify_mac(
             &verify_data,
             &self.mac,
             self.session_counter,
-            verification_key,
+            &verification_key,
             hsm.performance_metrics_ref(),
         )
         .map_err(VerifyError::MacMismatch)?;
@@ -278,6 +286,7 @@ mod tests {
             mac: [0u8; 32], // All zeros - indicates no MAC
             crc: 0,         // Zero CRC
             session_counter: 0,
+            key_version: 0,
         };
 
         // Should detect as UnsecuredFrame
