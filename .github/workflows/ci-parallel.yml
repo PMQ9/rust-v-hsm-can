@@ -1,0 +1,235 @@
+name: Rust CI (Parallel)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Phase 1: Fast checks (run in parallel)
+  format:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        components: rustfmt
+        override: true
+    - name: Check formatting
+      run: cargo fmt -- --check
+
+  clippy:
+    name: Clippy Linting
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        components: clippy
+        override: true
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
+    - name: Run clippy
+      run: cargo clippy -- -D warnings
+
+  # Phase 2: Build (blocks tests)
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [format, clippy]
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+    - name: Build
+      run: cargo build --verbose
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-artifacts
+        path: target/debug/
+        retention-days: 1
+
+  # Phase 3: All tests run in parallel
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: build-artifacts
+        path: target/debug/
+    - name: Run unit tests
+      run: cargo test --workspace --lib --verbose 2>&1 | tee unit-tests.log
+    - name: Upload test logs
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: unit-tests-log
+        path: unit-tests.log
+        retention-days: 7
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: build-artifacts
+        path: target/debug/
+    - name: Run integration tests
+      run: cargo test --workspace --test integration_tests --verbose 2>&1 | tee integration-tests.log
+    - name: Upload test logs
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: integration-tests-log
+        path: integration-tests.log
+        retention-days: 7
+
+  regression-tests:
+    name: Regression Tests (${{ matrix.test-suite }})
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        test-suite:
+          - name: Attack Detection
+            package: rust-v-hsm-can
+            test: attack_regression_tests
+          - name: Access Control
+            package: rust-v-hsm-can
+            test: access_control_regression_tests
+          - name: Replay Protection
+            package: rust-v-hsm-can
+            test: replay_protection_regression_tests
+          - name: Anomaly IDS
+            package: autonomous_vehicle_sim
+            test: anomaly_ids_regression_tests
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: build-artifacts
+        path: target/debug/
+    - name: Run ${{ matrix.test-suite.name }} tests
+      run: |
+        cargo test --package ${{ matrix.test-suite.package }} \
+          --test ${{ matrix.test-suite.test }} -- \
+          --ignored --test-threads=1 --nocapture 2>&1 | tee ${{ matrix.test-suite.test }}.log
+    - name: Upload test logs
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ matrix.test-suite.test }}-log
+        path: ${{ matrix.test-suite.test }}.log
+        retention-days: 7
+
+  # Summary job (runs after all tests complete)
+  summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests, regression-tests]
+    if: always()
+    steps:
+    - name: Download all test logs
+      uses: actions/download-artifact@v3
+    - name: Generate summary
+      run: |
+        echo "# CI Test Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Test Suite | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|------------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Unit Tests | ${{ needs.unit-tests.result == 'success' && '✓ PASS' || '✗ FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Integration Tests | ${{ needs.integration-tests.result == 'success' && '✓ PASS' || '✗ FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Regression Tests | ${{ needs.regression-tests.result == 'success' && '✓ PASS' || '✗ FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        if [ "${{ needs.unit-tests.result }}" == "success" ] && \
+           [ "${{ needs.integration-tests.result }}" == "success" ] && \
+           [ "${{ needs.regression-tests.result }}" == "success" ]; then
+          echo "## ✓ All Tests Passed!" >> $GITHUB_STEP_SUMMARY
+          exit 0
+        else
+          echo "## ✗ Some Tests Failed" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        fi

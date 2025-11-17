@@ -291,10 +291,16 @@ Registration:
 ### Quick Start: Run Full CI Suite
 
 ```bash
+# RECOMMENDED: Parallel CI (41% faster, ~4 minutes)
+./run_ci_tests_parallel.sh
+
+# Alternative: Sequential CI (cleaner for debugging, ~7 minutes)
 ./run_ci_tests.sh
 ```
 
-This single command runs all 9 test categories (formatting, linting, build, unit tests, integration tests, 4 regression suites) with colored output and comprehensive summary. **Use this before committing any changes.**
+The parallel script runs tests in 3 phases: (1) Fast checks in parallel, (2) Build, (3) All 6 test suites in parallel. It provides visual progress tracking, per-test timing, and colored output. **Use this before committing any changes.**
+
+For detailed information about parallelization, see [CI_PARALLELIZATION.md](CI_PARALLELIZATION.md).
 
 ### Manual Test Execution (if needed)
 

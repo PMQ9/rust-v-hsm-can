@@ -1,4 +1,13 @@
 # Changelog
+## 2025-11-17
+
+### CI Parallelization
+- Added parallel CI implementation reducing execution time by 41% (405s → 240s)
+- New script: run_ci_tests_parallel.sh with 3-phase execution (checks, build, tests)
+- Enhanced GitHub Actions workflow: ci-parallel.yml with job matrix and artifact sharing
+- Visual improvements: color-coded output, progress tracking, per-test timing
+- Documentation: CI_PARALLELIZATION.md with performance metrics and migration guide
+
 ## 2025-11-16
 
 ### Critical Bug Fix: Key Rotation
