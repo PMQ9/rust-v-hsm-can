@@ -81,24 +81,50 @@ jobs:
     - name: Generate Test Summary
       if: always()
       run: |
+        set +e  # Disable exit-on-error for this step to handle missing logs gracefully
+
         echo "# Test Results Summary" > test-summary.md
         echo "" >> test-summary.md
 
-        # Count test results
-        UNIT_TESTS=$(grep -oP "test result:.*?\K\d+(?= passed)" unit-tests.log 2>/dev/null || echo "0")
-        UNIT_FAILED=$(grep -oP "test result:.*?(\d+) failed" unit-tests.log | grep -oP "\d+" 2>/dev/null || echo "0")
+        # Helper function to safely extract and validate numeric values
+        safe_count() {
+          local value="$1"
+          # Remove all whitespace and newlines, then validate it's a number
+          value=$(echo "$value" | tr -d '\n\r\t ' | sed 's/^$/0/')
+          if [[ "$value" =~ ^[0-9]+$ ]]; then
+            echo "$value"
+          else
+            echo "0"
+          fi
+        }
 
-        INTEGRATION_TESTS=$(grep -oP "test result:.*?\K\d+(?= passed)" integration-tests.log 2>/dev/null || echo "0")
-        INTEGRATION_FAILED=$(grep -oP "test result:.*?(\d+) failed" integration-tests.log | grep -oP "\d+" 2>/dev/null || echo "0")
+        # Count test results (sum all test counts across all packages)
+        UNIT_TESTS=$(grep -oP "\d+(?= passed)" unit-tests.log 2>/dev/null | awk '{sum+=$1} END {print sum+0}')
+        UNIT_FAILED=$(grep -oP "\d+(?= failed)" unit-tests.log 2>/dev/null | awk '{sum+=$1} END {print sum+0}')
+
+        INTEGRATION_TESTS=$(grep -oP "\d+(?= passed)" integration-tests.log 2>/dev/null | awk '{sum+=$1} END {print sum+0}')
+        INTEGRATION_FAILED=$(grep -oP "\d+(?= failed)" integration-tests.log 2>/dev/null | awk '{sum+=$1} END {print sum+0}')
 
         ATTACK_TESTS=$(grep -c "Test PASSED" attack-tests.log 2>/dev/null || echo "0")
-        ACCESS_TESTS=$(grep -c "Test PASSED" access-tests.log 2>/dev/null || echo "0")
+        ACCESS_TESTS=$(grep -c "Test passed:" access-tests.log 2>/dev/null || echo "0")
         REPLAY_TESTS=$(grep -c "Test PASSED" replay-tests.log 2>/dev/null || echo "0")
         ANOMALY_TESTS=$(grep -c "Test Passed" anomaly-tests.log 2>/dev/null || echo "0")
+
+        # Sanitize all variables
+        UNIT_TESTS=$(safe_count "$UNIT_TESTS")
+        UNIT_FAILED=$(safe_count "$UNIT_FAILED")
+        INTEGRATION_TESTS=$(safe_count "$INTEGRATION_TESTS")
+        INTEGRATION_FAILED=$(safe_count "$INTEGRATION_FAILED")
+        ATTACK_TESTS=$(safe_count "$ATTACK_TESTS")
+        ACCESS_TESTS=$(safe_count "$ACCESS_TESTS")
+        REPLAY_TESTS=$(safe_count "$REPLAY_TESTS")
+        ANOMALY_TESTS=$(safe_count "$ANOMALY_TESTS")
 
         # Calculate totals
         TOTAL_TESTS=$((UNIT_TESTS + INTEGRATION_TESTS + ATTACK_TESTS + ACCESS_TESTS + REPLAY_TESTS + ANOMALY_TESTS))
         TOTAL_FAILED=$((UNIT_FAILED + INTEGRATION_FAILED))
+
+        set -e  # Re-enable exit-on-error
 
         # Determine status indicators
         FMT_STATUS="${{ steps.fmt.outcome == 'success' && '✓ PASS' || '✗ FAIL' }}"

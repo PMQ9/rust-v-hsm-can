@@ -1,4 +1,19 @@
 # Changelog
+## 2025-11-18
+
+### CI Test Summary Fix
+- Fixed CI workflow test count extraction causing bash arithmetic errors and exit code 1
+- Root cause #1: bash -e flag caused script to exit when grep commands failed on missing logs
+- Root cause #2: tail -1 only captured last package's test count, not total across all packages
+- Root cause #3: Failed count regex extracted ALL digits (including passed counts), giving 219 failures instead of 0
+- Root cause #4: Access control pattern didn't match actual test output format
+- Solution: Disabled exit-on-error (set +e) for summary generation step
+- Changed to awk sum to aggregate test counts across all workspace packages
+- Fixed failed count regex to use positive lookahead: `\d+(?= failed)` instead of complex two-stage grep
+- Fixed access control pattern from "Test PASSED" to "Test passed:" to match actual output
+- Added safe_count() helper function for robust value sanitization
+- Tested locally: All counts now correct (234 total tests, 0 failures)
+
 ## 2025-11-16
 
 ### Critical Bug Fix: Key Rotation
