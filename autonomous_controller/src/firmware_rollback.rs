@@ -8,7 +8,7 @@
 /// - 8.5.3: Rollback mechanisms
 /// - 10.3: Secure software updates
 use crate::hsm::SignedFirmware;
-use crate::protected_memory::{FirmwareInfo, ProtectedMemory};
+use crate::protected_memory::ProtectedMemory;
 use chrono::{DateTime, Utc};
 use colored::*;
 use serde::{Deserialize, Serialize};

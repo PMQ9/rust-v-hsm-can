@@ -1,3 +1,4 @@
+use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit as AeadKeyInit, Nonce};
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 use std::time::Instant;
@@ -18,8 +19,8 @@ pub fn generate_mac(
         None
     };
 
-    let mut mac =
-        Hmac::<Sha256>::new_from_slice(symmetric_key).expect("HMAC can take key of any size");
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(symmetric_key)
+        .expect("HMAC can take key of any size");
 
     // Include data and session counter in MAC
     mac.update(data);
@@ -55,8 +56,8 @@ pub fn verify_mac(
         None
     };
 
-    let mut expected_mac =
-        Hmac::<Sha256>::new_from_slice(verification_key).expect("HMAC can take key of any size");
+    let mut expected_mac = <Hmac<Sha256> as Mac>::new_from_slice(verification_key)
+        .expect("HMAC can take key of any size");
 
     expected_mac.update(data);
     expected_mac.update(&session_counter.to_le_bytes());
@@ -156,8 +157,8 @@ pub fn verify_firmware_fingerprint(firmware_data: &[u8], expected_fingerprint: &
 
 /// Sign firmware fingerprint with secure boot key (for secure boot)
 pub fn sign_firmware(firmware_fingerprint: &[u8; 32], secure_boot_key: &[u8; 32]) -> [u8; 32] {
-    let mut mac =
-        Hmac::<Sha256>::new_from_slice(secure_boot_key).expect("HMAC can take key of any size");
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(secure_boot_key)
+        .expect("HMAC can take key of any size");
     mac.update(firmware_fingerprint);
 
     let result = mac.finalize();
@@ -173,8 +174,8 @@ pub fn verify_firmware_signature(
     signature: &[u8; 32],
     secure_boot_key: &[u8; 32],
 ) -> bool {
-    let mut expected_sig =
-        Hmac::<Sha256>::new_from_slice(secure_boot_key).expect("HMAC can take key of any size");
+    let mut expected_sig = <Hmac<Sha256> as Mac>::new_from_slice(secure_boot_key)
+        .expect("HMAC can take key of any size");
     expected_sig.update(firmware_fingerprint);
 
     // Constant-time comparison
@@ -204,6 +205,103 @@ pub fn authorize_firmware_update(update_token: &[u8; 32], firmware_update_key: &
         .iter()
         .zip(expected.iter())
         .all(|(a, b)| a == b)
+}
+
+// ========================================================================
+// AES-256-GCM Authenticated Encryption
+// ========================================================================
+
+/// Encrypt data using AES-256-GCM (Authenticated Encryption with Associated Data)
+///
+/// AES-256-GCM provides:
+/// - Confidentiality: AES-256 encryption
+/// - Authenticity: 128-bit authentication tag (GMAC)
+/// - Integrity: Detects tampering
+///
+/// # Arguments
+/// * `plaintext` - Data to encrypt
+/// * `key` - 256-bit encryption key (32 bytes)
+/// * `nonce` - 96-bit nonce (12 bytes) - MUST be unique for each encryption with the same key
+/// * `associated_data` - Additional authenticated data (not encrypted, but authenticated)
+///
+/// # Returns
+/// * `Ok(ciphertext)` - Encrypted data with authentication tag appended (len = plaintext.len() + 16)
+/// * `Err(String)` - Encryption error
+///
+/// # Security Notes
+/// - NEVER reuse the same nonce with the same key (breaks security)
+/// - Use a counter, random value, or timestamp for nonce generation
+/// - Associated data can include context like CAN ID, ECU name, etc.
+pub fn encrypt_aes256_gcm(
+    plaintext: &[u8],
+    key: &[u8; 32],
+    nonce: &[u8; 12],
+    associated_data: &[u8],
+) -> Result<Vec<u8>, String> {
+    // Create AES-256-GCM cipher
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| format!("Invalid key: {}", e))?;
+
+    // Create nonce from 12-byte array
+    let nonce_obj = Nonce::from_slice(nonce);
+
+    // Encrypt with associated data
+    let ciphertext = cipher
+        .encrypt(
+            nonce_obj,
+            aes_gcm::aead::Payload {
+                msg: plaintext,
+                aad: associated_data,
+            },
+        )
+        .map_err(|e| format!("Encryption failed: {}", e))?;
+
+    Ok(ciphertext)
+}
+
+/// Decrypt data using AES-256-GCM
+///
+/// # Arguments
+/// * `ciphertext` - Encrypted data with authentication tag (from encrypt_aes256_gcm)
+/// * `key` - 256-bit decryption key (32 bytes) - MUST match encryption key
+/// * `nonce` - 96-bit nonce (12 bytes) - MUST match encryption nonce
+/// * `associated_data` - Additional authenticated data - MUST match encryption AAD
+///
+/// # Returns
+/// * `Ok(plaintext)` - Decrypted data (len = ciphertext.len() - 16)
+/// * `Err(String)` - Decryption or authentication failure
+///
+/// # Security Notes
+/// - Decryption fails if ciphertext is tampered, wrong key, wrong nonce, or wrong AAD
+/// - Always check the Result - never use unauthenticated data
+pub fn decrypt_aes256_gcm(
+    ciphertext: &[u8],
+    key: &[u8; 32],
+    nonce: &[u8; 12],
+    associated_data: &[u8],
+) -> Result<Vec<u8>, String> {
+    // Create AES-256-GCM cipher
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| format!("Invalid key: {}", e))?;
+
+    // Create nonce from 12-byte array
+    let nonce_obj = Nonce::from_slice(nonce);
+
+    // Decrypt and verify authentication tag
+    let plaintext = cipher
+        .decrypt(
+            nonce_obj,
+            aes_gcm::aead::Payload {
+                msg: ciphertext,
+                aad: associated_data,
+            },
+        )
+        .map_err(|e| {
+            format!(
+                "Decryption failed (wrong key, tampered data, or wrong nonce): {}",
+                e
+            )
+        })?;
+
+    Ok(plaintext)
 }
 
 #[cfg(test)]

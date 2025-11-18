@@ -1,4 +1,28 @@
 # Changelog
+## 2025-11-18 (Cryptographic Enhancement)
+
+### Hardware-Based RNG and AES-256-GCM Encryption
+- **Hardware RNG Implementation**: Replaced deterministic StdRng with OS-provided cryptographically secure RNG
+  - Added OsRng support (cross-platform: Linux /dev/urandom, Windows CryptGenRandom, ARM TrustZone, WSL2)
+  - New VirtualHSM constructors: `new_secure()` for production (hardware RNG), `new()` for testing (deterministic)
+  - Hardware RNG methods: `fill_random_bytes()`, `generate_random()`, `generate_random_bytes()`
+- **AES-256-GCM Authenticated Encryption**: Replaced XOR-based stream cipher with production-grade AEAD
+  - Implemented `encrypt_aes256_gcm()` and `decrypt_aes256_gcm()` in crypto.rs
+  - Key encryption now uses AES-256-GCM (32-byte plaintext → 48-byte ciphertext with 128-bit auth tag)
+  - Nonce derivation: SHA256-based deterministic nonce from KEK + key_id (unique per encryption)
+  - AAD includes key_id to prevent key_id confusion attacks
+  - Updated key_rotation.rs: `encrypt_key_simple()` and `decrypt_key_simple()` now use AES-GCM
+- **Dependencies**: Added aes-gcm v0.10 and getrandom v0.2, removed unused aes and cbc crates
+- **Security Improvements**:
+  - Authentication tag prevents tampering and wrong KEK detection
+  - Hardware RNG provides unpredictable key material
+  - AES-GCM provides both confidentiality and authenticity (vs XOR which only provided confidentiality)
+- **Test Updates**: Fixed key_rotation tests to account for AES-GCM authentication (wrong key_id now fails)
+- **All tests passing**: 292 tests total
+  - 263 unit tests (257 autonomous_vehicle_sim + 6 basic)
+  - 13 integration tests
+  - 16 regression tests (attack, access control, replay protection, anomaly IDS)
+
 ## 2025-11-18 (Phase 2)
 
 ### Phase 3 & 4 Features - Complete Automotive Security Suite

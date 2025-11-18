@@ -16,10 +16,10 @@ ctrlc = "3.4"
 # Cryptography dependencies for HSM
 hmac = "0.12"
 sha2 = "0.10"
-aes = "0.8"
-cbc = { version = "0.1", features = ["alloc"] }
+aes-gcm = "0.10"  # AES-256-GCM authenticated encryption
 crc = "3.0"
 hkdf = "0.12"
+getrandom = "0.2"  # Hardware-based RNG (cross-platform)
 
 # Main launcher
 [[bin]]
