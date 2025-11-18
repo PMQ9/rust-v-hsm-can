@@ -1,4 +1,4 @@
-use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit as AeadKeyInit, Nonce};
+use aes_gcm::{Aes256Gcm, KeyInit as AeadKeyInit, Nonce, aead::Aead};
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 use std::time::Instant;
