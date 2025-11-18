@@ -43,11 +43,11 @@ struct Dashboard {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ThreatLevel {
-    Secure,      // No attacks detected
-    Low,         // 1-5 unsecured frames
-    Medium,      // 6-20 unsecured frames
-    High,        // 21-50 unsecured frames
-    Critical,    // >50 unsecured frames
+    Secure,   // No attacks detected
+    Low,      // 1-5 unsecured frames
+    Medium,   // 6-20 unsecured frames
+    High,     // 21-50 unsecured frames
+    Critical, // >50 unsecured frames
 }
 
 #[tokio::main]
@@ -220,18 +220,28 @@ impl Dashboard {
         self.frame_count += 1;
 
         // Track frames per ECU
-        *self.frames_per_ecu.entry(secured_frame.source.clone()).or_insert(0) += 1;
+        *self
+            .frames_per_ecu
+            .entry(secured_frame.source.clone())
+            .or_insert(0) += 1;
 
         // Track unique CAN IDs
         match secured_frame.can_id {
-            CanId::Standard(id) => { self.unique_can_ids.insert(id as u32); }
-            CanId::Extended(id) => { self.unique_can_ids.insert(id); }
+            CanId::Standard(id) => {
+                self.unique_can_ids.insert(id as u32);
+            }
+            CanId::Extended(id) => {
+                self.unique_can_ids.insert(id);
+            }
         }
 
         // Check if this is an unsecured frame (MAC=0 and CRC=0)
         if secured_frame.mac == [0u8; 32] && secured_frame.crc == 0 {
             self.unsecured_frame_count += 1;
-            *self.unsecured_frames_per_ecu.entry(secured_frame.source.clone()).or_insert(0) += 1;
+            *self
+                .unsecured_frames_per_ecu
+                .entry(secured_frame.source.clone())
+                .or_insert(0) += 1;
 
             // Track attack start time
             if self.attack_start_time.is_none() {
@@ -715,7 +725,9 @@ impl Dashboard {
             stdout,
             "\r  {} Threat Level: {} | Security Rate: {:.1}% | Unique CAN IDs: {}",
             "ℹ".magenta(),
-            format!("{}", threat_label).color(threat_color.as_str()).bold(),
+            format!("{}", threat_label)
+                .color(threat_color.as_str())
+                .bold(),
             security_rate,
             self.unique_can_ids.len()
         )?;
@@ -1030,9 +1042,21 @@ mod tests {
         dashboard.update_frame(create_test_secured_frame("ATTACKER3", 0x300, false));
 
         assert_eq!(dashboard.recent_attackers.len(), 3);
-        assert!(dashboard.recent_attackers.contains(&"ATTACKER1".to_string()));
-        assert!(dashboard.recent_attackers.contains(&"ATTACKER2".to_string()));
-        assert!(dashboard.recent_attackers.contains(&"ATTACKER3".to_string()));
+        assert!(
+            dashboard
+                .recent_attackers
+                .contains(&"ATTACKER1".to_string())
+        );
+        assert!(
+            dashboard
+                .recent_attackers
+                .contains(&"ATTACKER2".to_string())
+        );
+        assert!(
+            dashboard
+                .recent_attackers
+                .contains(&"ATTACKER3".to_string())
+        );
     }
 
     #[test]
@@ -1051,9 +1075,21 @@ mod tests {
         // Should only keep last 5
         assert_eq!(dashboard.recent_attackers.len(), 5);
         // Should have ATTACKER2-ATTACKER6
-        assert!(!dashboard.recent_attackers.contains(&"ATTACKER0".to_string()));
-        assert!(!dashboard.recent_attackers.contains(&"ATTACKER1".to_string()));
-        assert!(dashboard.recent_attackers.contains(&"ATTACKER6".to_string()));
+        assert!(
+            !dashboard
+                .recent_attackers
+                .contains(&"ATTACKER0".to_string())
+        );
+        assert!(
+            !dashboard
+                .recent_attackers
+                .contains(&"ATTACKER1".to_string())
+        );
+        assert!(
+            dashboard
+                .recent_attackers
+                .contains(&"ATTACKER6".to_string())
+        );
     }
 
     #[test]
@@ -1073,7 +1109,8 @@ mod tests {
         assert_eq!(dashboard.unsecured_frame_count, 30);
 
         // Security rate should be 70%
-        let security_rate = (dashboard.secured_frame_count as f64 / dashboard.frame_count as f64) * 100.0;
+        let security_rate =
+            (dashboard.secured_frame_count as f64 / dashboard.frame_count as f64) * 100.0;
         assert!((security_rate - 70.0).abs() < 0.1);
     }
 }

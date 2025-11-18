@@ -42,10 +42,10 @@ pub enum DiagnosticSession {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum SecurityLevel {
     Locked = 0,
-    Level1 = 1,  // Read diagnostic data
-    Level2 = 2,  // Read/write calibration data
-    Level3 = 3,  // Programming (flash update)
-    Level4 = 4,  // Safety-critical functions
+    Level1 = 1, // Read diagnostic data
+    Level2 = 2, // Read/write calibration data
+    Level3 = 3, // Programming (flash update)
+    Level4 = 4, // Safety-critical functions
 }
 
 /// UDS negative response codes
@@ -123,9 +123,14 @@ impl UdsDiagnosticSession {
     }
 
     /// Change diagnostic session
-    pub fn change_session(&mut self, session: DiagnosticSession) -> Result<(), NegativeResponseCode> {
+    pub fn change_session(
+        &mut self,
+        session: DiagnosticSession,
+    ) -> Result<(), NegativeResponseCode> {
         // Programming session requires Level3 security
-        if session == DiagnosticSession::ProgrammingSession && self.security_level < SecurityLevel::Level3 {
+        if session == DiagnosticSession::ProgrammingSession
+            && self.security_level < SecurityLevel::Level3
+        {
             return Err(NegativeResponseCode::SecurityAccessDenied);
         }
 
@@ -154,10 +159,16 @@ impl UdsDiagnosticSession {
     }
 
     /// Generate seed for security access
-    pub fn request_seed(&mut self, level: SecurityLevel, _hsm: &VirtualHSM) -> SecurityAccessResponse {
+    pub fn request_seed(
+        &mut self,
+        level: SecurityLevel,
+        _hsm: &VirtualHSM,
+    ) -> SecurityAccessResponse {
         // Check lockout
         if self.is_locked_out() {
-            return SecurityAccessResponse::NegativeResponse(NegativeResponseCode::RequiredTimeDelayNotExpired);
+            return SecurityAccessResponse::NegativeResponse(
+                NegativeResponseCode::RequiredTimeDelayNotExpired,
+            );
         }
 
         // If already at this level or higher, return 0x00 seed (already unlocked)
@@ -181,24 +192,35 @@ impl UdsDiagnosticSession {
     }
 
     /// Verify key for security access
-    pub fn verify_key(&mut self, level: SecurityLevel, key: Vec<u8>, hsm: &VirtualHSM) -> SecurityAccessResponse {
+    pub fn verify_key(
+        &mut self,
+        level: SecurityLevel,
+        key: Vec<u8>,
+        hsm: &VirtualHSM,
+    ) -> SecurityAccessResponse {
         // Check lockout
         if self.is_locked_out() {
-            return SecurityAccessResponse::NegativeResponse(NegativeResponseCode::RequiredTimeDelayNotExpired);
+            return SecurityAccessResponse::NegativeResponse(
+                NegativeResponseCode::RequiredTimeDelayNotExpired,
+            );
         }
 
         // Check if we have a pending seed and extract it
         let (seed_value, timestamp) = match &self.pending_seed {
             Some(p) if p.level == level => (p.seed.clone(), p.timestamp),
             _ => {
-                return SecurityAccessResponse::NegativeResponse(NegativeResponseCode::RequestSequenceError);
+                return SecurityAccessResponse::NegativeResponse(
+                    NegativeResponseCode::RequestSequenceError,
+                );
             }
         };
 
         // Check seed timeout
         if timestamp.elapsed().unwrap_or(Duration::MAX) > self.seed_timeout {
             self.pending_seed = None;
-            return SecurityAccessResponse::NegativeResponse(NegativeResponseCode::RequestSequenceError);
+            return SecurityAccessResponse::NegativeResponse(
+                NegativeResponseCode::RequestSequenceError,
+            );
         }
 
         // Compute expected key using HMAC-SHA256(seed, ECU_secret)
@@ -223,7 +245,9 @@ impl UdsDiagnosticSession {
             if *total_attempts >= self.max_failed_attempts {
                 self.lockout_until = Some(SystemTime::now() + self.lockout_duration);
                 self.pending_seed = None;
-                SecurityAccessResponse::NegativeResponse(NegativeResponseCode::ExceededNumberOfAttempts)
+                SecurityAccessResponse::NegativeResponse(
+                    NegativeResponseCode::ExceededNumberOfAttempts,
+                )
             } else {
                 SecurityAccessResponse::NegativeResponse(NegativeResponseCode::InvalidKey)
             }
@@ -235,8 +259,8 @@ impl UdsDiagnosticSession {
         // Derive ECU-specific secret from HSM master key
         let secret = format!("{}_SECURITY_LEVEL_{}", self.ecu_name, level as u8);
 
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-            .expect("HMAC can take key of any size");
+        let mut mac =
+            HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC can take key of any size");
         mac.update(seed);
         mac.finalize().into_bytes().to_vec()
     }
@@ -279,7 +303,8 @@ impl UdsDiagnosticServer {
 
     /// Get or create session for client
     pub fn get_session(&mut self, client_id: &str, ecu_name: String) -> &mut UdsDiagnosticSession {
-        self.sessions.entry(client_id.to_string())
+        self.sessions
+            .entry(client_id.to_string())
             .or_insert_with(|| UdsDiagnosticSession::new(ecu_name))
     }
 
@@ -331,7 +356,11 @@ mod tests {
         let mut session = UdsDiagnosticSession::new("BRAKE_CTRL".to_string());
 
         // Can change to extended diagnostic without security
-        assert!(session.change_session(DiagnosticSession::ExtendedDiagnosticSession).is_ok());
+        assert!(
+            session
+                .change_session(DiagnosticSession::ExtendedDiagnosticSession)
+                .is_ok()
+        );
 
         // Cannot change to programming without Level3
         assert_eq!(
@@ -405,7 +434,10 @@ mod tests {
         let wrong_key = vec![0xFF, 0xFF, 0xFF, 0xFF];
         let response = session.verify_key(SecurityLevel::Level1, wrong_key, &hsm);
 
-        assert_eq!(response, SecurityAccessResponse::NegativeResponse(NegativeResponseCode::InvalidKey));
+        assert_eq!(
+            response,
+            SecurityAccessResponse::NegativeResponse(NegativeResponseCode::InvalidKey)
+        );
         assert_eq!(session.security_level(), SecurityLevel::Locked);
     }
 
@@ -430,14 +462,18 @@ mod tests {
 
         assert_eq!(
             response,
-            SecurityAccessResponse::NegativeResponse(NegativeResponseCode::ExceededNumberOfAttempts)
+            SecurityAccessResponse::NegativeResponse(
+                NegativeResponseCode::ExceededNumberOfAttempts
+            )
         );
 
         // Subsequent requests should fail with lockout error
         let locked_response = session.request_seed(SecurityLevel::Level1, &hsm);
         assert_eq!(
             locked_response,
-            SecurityAccessResponse::NegativeResponse(NegativeResponseCode::RequiredTimeDelayNotExpired)
+            SecurityAccessResponse::NegativeResponse(
+                NegativeResponseCode::RequiredTimeDelayNotExpired
+            )
         );
     }
 

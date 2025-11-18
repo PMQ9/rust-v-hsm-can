@@ -47,8 +47,8 @@ pub use security_correlation::{
     AttackPattern, CorrelationEngine, CorrelationRule, SecurityEventRecord,
 };
 pub use security_gateway::{
-    AuditEntry, GatewayStats, RoutingAction, SecurityGatewayConfig, SecurityZone,
-    ZoneRoutingRule, build_automotive_gateway,
+    AuditEntry, GatewayStats, RoutingAction, SecurityGatewayConfig, SecurityZone, ZoneRoutingRule,
+    build_automotive_gateway,
 };
 pub use security_log::{SecurityEvent, SecurityLogger};
 pub use tara::{AssetType, RiskLevel, TaraAnalysis, TaraGenerator, ThreatScenario, ThreatType};

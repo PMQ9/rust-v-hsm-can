@@ -30,9 +30,9 @@ pub enum SecurityZone {
 /// Routing action for messages crossing zones
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RoutingAction {
-    Allow,      // Forward message to destination zone
-    Deny,       // Block message
-    Audit,      // Forward but log for security audit
+    Allow, // Forward message to destination zone
+    Deny,  // Block message
+    Audit, // Forward but log for security audit
 }
 
 /// Zone routing rule
@@ -76,7 +76,10 @@ impl ZoneRoutingRule {
     pub fn is_can_id_allowed(&self, can_id: u32) -> bool {
         match &self.allowed_can_ids {
             Some(allowed) => allowed.contains(&can_id),
-            None => self.default_action == RoutingAction::Allow || self.default_action == RoutingAction::Audit,
+            None => {
+                self.default_action == RoutingAction::Allow
+                    || self.default_action == RoutingAction::Audit
+            }
         }
     }
 }
@@ -381,7 +384,8 @@ mod tests {
     fn test_unknown_ecu_denied() {
         let mut gateway = SecurityGatewayConfig::new();
 
-        let action = gateway.check_routing("UNKNOWN", SecurityZone::Chassis, CanId::Standard(0x100));
+        let action =
+            gateway.check_routing("UNKNOWN", SecurityZone::Chassis, CanId::Standard(0x100));
         assert_eq!(action, RoutingAction::Deny);
         assert_eq!(gateway.stats().messages_blocked, 1);
     }
@@ -412,7 +416,11 @@ mod tests {
             RoutingAction::Deny,
         ));
 
-        let action = gateway.check_routing("INFOTAINMENT", SecurityZone::Chassis, CanId::Standard(0x300));
+        let action = gateway.check_routing(
+            "INFOTAINMENT",
+            SecurityZone::Chassis,
+            CanId::Standard(0x300),
+        );
         assert_eq!(action, RoutingAction::Deny);
         assert_eq!(gateway.stats().messages_blocked, 1);
     }
@@ -425,16 +433,22 @@ mod tests {
         let mut allowed_ids = HashSet::new();
         allowed_ids.insert(0x300);
         gateway.add_routing_rule(
-            ZoneRoutingRule::new(SecurityZone::Adas, SecurityZone::Chassis, RoutingAction::Allow)
-                .with_allowed_can_ids(allowed_ids),
+            ZoneRoutingRule::new(
+                SecurityZone::Adas,
+                SecurityZone::Chassis,
+                RoutingAction::Allow,
+            )
+            .with_allowed_can_ids(allowed_ids),
         );
 
         // Allowed ID
-        let action1 = gateway.check_routing("CONTROLLER", SecurityZone::Chassis, CanId::Standard(0x300));
+        let action1 =
+            gateway.check_routing("CONTROLLER", SecurityZone::Chassis, CanId::Standard(0x300));
         assert_eq!(action1, RoutingAction::Allow);
 
         // Blocked ID
-        let action2 = gateway.check_routing("CONTROLLER", SecurityZone::Chassis, CanId::Standard(0x400));
+        let action2 =
+            gateway.check_routing("CONTROLLER", SecurityZone::Chassis, CanId::Standard(0x400));
         assert_eq!(action2, RoutingAction::Deny);
     }
 
@@ -449,7 +463,8 @@ mod tests {
             RoutingAction::Audit,
         ));
 
-        let action = gateway.check_routing("DIAG_TOOL", SecurityZone::Chassis, CanId::Standard(0x100));
+        let action =
+            gateway.check_routing("DIAG_TOOL", SecurityZone::Chassis, CanId::Standard(0x100));
         assert_eq!(action, RoutingAction::Audit);
         assert_eq!(gateway.stats().messages_audited, 1);
         assert_eq!(gateway.audit_log().len(), 1);
@@ -461,7 +476,8 @@ mod tests {
         gateway.register_ecu("ECU1".to_string(), SecurityZone::Body);
 
         // No rule defined for Body → Powertrain
-        let action = gateway.check_routing("ECU1", SecurityZone::Powertrain, CanId::Standard(0x100));
+        let action =
+            gateway.check_routing("ECU1", SecurityZone::Powertrain, CanId::Standard(0x100));
         assert_eq!(action, RoutingAction::Deny);
     }
 
@@ -479,7 +495,8 @@ mod tests {
 
         // Infotainment cannot send to chassis
         gateway.register_ecu("HEADUNIT".to_string(), SecurityZone::Infotainment);
-        let action = gateway.check_routing("HEADUNIT", SecurityZone::Chassis, CanId::Standard(0x300));
+        let action =
+            gateway.check_routing("HEADUNIT", SecurityZone::Chassis, CanId::Standard(0x300));
         assert_eq!(action, RoutingAction::Deny);
     }
 

@@ -124,8 +124,8 @@ impl SignedConfig {
         );
 
         let secret = format!("CONFIG_SIGNING_KEY_{}", self.ecu_id);
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-            .expect("HMAC can take key of any size");
+        let mut mac =
+            HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC can take key of any size");
         mac.update(&signature_input);
 
         mac.verify_slice(&self.signature)
@@ -195,7 +195,9 @@ pub enum ConfigError {
 impl std::fmt::Display for ConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            ConfigError::FingerprintMismatch => write!(f, "Configuration fingerprint mismatch (data tampered)"),
+            ConfigError::FingerprintMismatch => {
+                write!(f, "Configuration fingerprint mismatch (data tampered)")
+            }
             ConfigError::SignatureInvalid => write!(f, "Configuration signature invalid"),
             ConfigError::VersionMismatch => write!(f, "Configuration version mismatch"),
             ConfigError::UnauthorizedSigner => write!(f, "Configuration signer not authorized"),
@@ -304,8 +306,7 @@ pub fn sign_json_config<T: Serialize>(
     hsm: &VirtualHSM,
 ) -> Result<SignedConfig, ConfigError> {
     // Serialize configuration
-    let data = serde_json::to_vec(config)
-        .map_err(|_| ConfigError::DeserializationError)?;
+    let data = serde_json::to_vec(config).map_err(|_| ConfigError::DeserializationError)?;
 
     Ok(SignedConfig::new(
         config_type,
@@ -326,8 +327,7 @@ pub fn load_json_config<T: for<'de> Deserialize<'de>>(
     signed_config.verify(hsm)?;
 
     // Deserialize configuration
-    serde_json::from_slice(signed_config.get_data())
-        .map_err(|_| ConfigError::DeserializationError)
+    serde_json::from_slice(signed_config.get_data()).map_err(|_| ConfigError::DeserializationError)
 }
 
 #[cfg(test)]
@@ -381,7 +381,10 @@ mod tests {
         signed_config.data = b"tampered data".to_vec();
 
         // Verification should fail
-        assert_eq!(signed_config.verify(&hsm), Err(ConfigError::FingerprintMismatch));
+        assert_eq!(
+            signed_config.verify(&hsm),
+            Err(ConfigError::FingerprintMismatch)
+        );
     }
 
     #[test]
@@ -402,7 +405,10 @@ mod tests {
         signed_config.signature[0] ^= 0xFF;
 
         // Verification should fail
-        assert_eq!(signed_config.verify(&hsm), Err(ConfigError::SignatureInvalid));
+        assert_eq!(
+            signed_config.verify(&hsm),
+            Err(ConfigError::SignatureInvalid)
+        );
     }
 
     #[test]
