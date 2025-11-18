@@ -1,4 +1,31 @@
 # Changelog
+## 2025-11-18 (Phase 2)
+
+### Phase 3 & 4 Features - Complete Automotive Security Suite
+- Completed all remaining Phase 3 and Phase 4 roadmap items for production-ready automotive security
+- **UDS Secure Diagnostics** (ISO 14229): Seed/key authentication, security levels, session management, lockout protection
+- **Signed Configuration Management**: Cryptographic integrity for access control policies, HMAC-SHA256 signatures, tamper detection
+- **Enhanced Security Dashboard**: Real-time threat metrics, per-ECU attack statistics, threat level visualization (Secure/Low/Medium/High/Critical)
+- **Security Gateway** (Zone Segmentation): Zone-based CAN bus isolation (Powertrain/Chassis/ADAS/Infotainment/Diagnostics), routing policies with CAN ID whitelists
+- New modules: uds_diagnostics.rs, config_management.rs, security_gateway.rs
+- Enhanced monitor binary with comprehensive security metrics section (9 new UI regression tests)
+- Test count: 266+ tests (257 unit + 9 monitor UI), all CI tests passing
+- Phase 3 & 4 features: 100% complete
+
+## 2025-11-18 (Phase 1)
+
+### ISO 21434 Cybersecurity Compliance Implementation
+- Implemented comprehensive ISO 21434 (Road Vehicles - Cybersecurity Engineering) compliance features
+- **Automated Incident Response** (ISO 21434 §8.6, §9.4.3): Severity-based incident classification and automated response actions
+- **Security Event Correlation** (ISO 21434 §9.4.2, §10.4): Pattern-based attack detection across time and ECUs (8 attack patterns)
+- **Firmware Update Rollback** (ISO 21434 §8.5, §10.3): Safe firmware updates with automatic rollback on validation failure
+- **TARA Documentation Generator** (ISO 21434 §8.4): Threat Analysis and Risk Assessment with STRIDE methodology
+- **ISO 21434 Audit Report Generator**: Comprehensive compliance documentation tool
+- New modules: incident_response.rs, security_correlation.rs, firmware_rollback.rs, tara.rs
+- New binaries: iso21434_audit_report, generate_tara_report
+- 6 pre-defined automotive threat scenarios with risk assessment
+- Test count: 227+ (up from 200), all CI tests passing
+
 ## 2025-11-18
 
 ### CI Test Summary Fix

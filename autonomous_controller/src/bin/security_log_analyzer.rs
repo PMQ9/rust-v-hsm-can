@@ -269,6 +269,7 @@ fn analyze_log_events(log_path: &PathBuf) -> Result<LogAnalysis, String> {
             SecurityEvent::UnauthorizedTransmit { .. } => "UnauthorizedTransmit",
             SecurityEvent::UnauthorizedReceive { .. } => "UnauthorizedReceive",
             SecurityEvent::AccessControlLoaded { .. } => "AccessControlLoaded",
+            SecurityEvent::Custom { .. } => "Custom",
         };
 
         *event_counts.entry(event_type.to_string()).or_insert(0) += 1;

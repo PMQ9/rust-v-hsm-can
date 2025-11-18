@@ -110,7 +110,75 @@ All ECUs use threshold-based attack detection with structured error types:
 
 Error counters reset automatically on successful frame validation, allowing recovery from transient failures while detecting sustained attacks.
 
+### ISO 21434 Cybersecurity Compliance
+
+This project implements comprehensive ISO/SAE 21434:2021 (Road Vehicles - Cybersecurity Engineering) compliance features:
+
+**Automated Incident Response** (§8.6, §9.4.3):
+- Severity-based incident classification (Low/Medium/High/Critical)
+- 8 incident categories with automated response actions
+- Graduated response: Log → Alert → Fail-Safe → Isolate ECU
+- Incident escalation and resolution tracking
+
+**Security Event Correlation** (§9.4.2, §10.4):
+- Pattern-based attack detection across time and ECUs
+- 8 attack patterns: Coordinated Multi-Source, Progressive Escalation, Targeted Attack, Multi-ECU Replay, Brute Force, etc.
+- Time-window correlation analysis (60-second windows)
+- Automated mitigation recommendations
+
+**Firmware Update Rollback** (§8.5, §10.3):
+- Secure firmware updates with signature verification
+- Automatic rollback on validation failure
+- Boot attempt limiting (max 3 attempts)
+- Version rollback prevention
+- Update lifecycle: Pending → Installing → AwaitingValidation → Committed
+
+**TARA Documentation** (§8.4):
+- Threat Analysis and Risk Assessment generator
+- STRIDE threat modeling methodology
+- ISO 21434 risk matrix (impact × feasibility)
+- 6 pre-defined automotive threat scenarios
+- Automated TARA report generation
+
+**Security Audit Reports**:
+- Comprehensive ISO 21434 compliance documentation
+- Coverage of 10+ ISO 21434 requirements
+- Run: `cargo run --bin iso21434_audit_report`
+- Run: `cargo run --bin generate_tara_report`
+
 See [autonomous_controller/README.md](autonomous_controller/README.md) for complete documentation.
+
+### Advanced Automotive Security Features (Phase 3 & 4)
+
+**UDS Secure Diagnostics** (ISO 14229):
+- Seed/key challenge-response authentication
+- 4 security levels (Level1-Level4) with graduated permissions
+- Session management with timeout protection
+- Lockout mechanism after 3 failed attempts (60-second lockout)
+- Diagnostic services: Security Access, Session Control, ECU Reset
+
+**Signed Configuration Management**:
+- Cryptographic integrity protection for ECU configurations
+- HMAC-SHA256 signatures with SHA256 fingerprinting
+- 5 configuration types: Access Control Policy, Diagnostic Config, Network Config, Security Config, Firmware Metadata
+- Authorized signer validation (FACTORY, FLEET_MANAGER)
+- Tamper detection and rejection
+
+**Enhanced Security Dashboard**:
+- Real-time threat level visualization (Secure/Low/Medium/High/Critical)
+- Security rate percentage tracking (secured vs unsecured frames)
+- Per-ECU attack statistics with attack rate calculation
+- Unique CAN ID monitoring
+- Attack duration tracking
+- Color-coded threat indicators
+
+**Security Gateway** (Zone Segmentation):
+- Zone-based CAN bus isolation: Powertrain, Chassis, ADAS, Infotainment, Body, Diagnostics
+- Zone-to-zone routing policies with default actions (Allow/Deny/Audit)
+- CAN ID whitelisting per route
+- Audit logging for cross-zone traffic
+- Prevents infotainment compromise from affecting safety-critical systems
+- Statistics tracking: messages forwarded/blocked/audited
 
 ## Build
 
@@ -203,7 +271,7 @@ cargo test --test replay_protection_regression_tests -- --ignored --test-threads
 cargo test --package autonomous_vehicle_sim --test anomaly_ids_regression_tests -- --ignored --test-threads=1 --nocapture
 ```
 
-**Total Test Count:** 159+ tests across all categories
+**Total Test Count:** 266+ tests across all categories (257 unit + 9 monitor UI + integration + regression)
 
 See [tests/README.md](tests/README.md) for details.
 
@@ -232,12 +300,19 @@ See [tests/README.md](tests/README.md) for details.
 - [x] Anomaly-based IDS (statistical baseline profiling)
 - [x] Attack simulation framework (fuzzing, injection, replay)
 
-**Phase 3 - Architecture:**
-- [ ] Security gateway ECU (zone segmentation)
+**Phase 3 - Architecture (Completed):**
+- [x] Security gateway ECU (zone segmentation)
 - [x] Cryptographic key rotation (session key lifecycle)
-- [ ] Enhanced security dashboard (real-time threat metrics)
+- [x] Enhanced security dashboard (real-time threat metrics)
 
-**Phase 4 - Advanced:**
-- [ ] UDS secure diagnostics (seed/key authentication)
-- [ ] Signed configuration management (policy tampering detection)
-- [ ] Advanced fail-safe recovery mechanisms
+**Phase 4 - Advanced (Completed):**
+- [x] UDS secure diagnostics (seed/key authentication)
+- [x] Signed configuration management (policy tampering detection)
+- [x] Advanced fail-safe recovery mechanisms
+
+**Phase 5 - ISO 21434 Compliance (Completed):**
+- [x] Automated incident response (§8.6, §9.4.3)
+- [x] Security event correlation (§9.4.2, §10.4)
+- [x] Firmware update rollback (§8.5, §10.3)
+- [x] TARA documentation generator (§8.4)
+- [x] ISO 21434 audit reporting

@@ -89,6 +89,9 @@ pub enum SecurityEvent {
         tx_whitelist_size: usize,
         rx_whitelist_size: Option<usize>,
     },
+
+    /// Custom event with message
+    Custom { message: String },
 }
 
 /// A single entry in the security log with tamper-resistant chaining
