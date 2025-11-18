@@ -62,28 +62,35 @@ INTEGRATION_RESULT=$?
 print_status "Integration Tests"
 echo ""
 
-# Test 6: Attack Detection Regression Tests
+# Test 6: Binary Tests (Monitor UI)
+echo "→ Running binary tests (monitor UI)..."
+cargo test --package autonomous_vehicle_sim --bin monitor --verbose
+MONITOR_RESULT=$?
+print_status "Monitor UI Tests"
+echo ""
+
+# Test 7: Attack Detection Regression Tests
 echo "→ Running attack detection regression tests..."
 cargo test --package rust-v-hsm-can --test attack_regression_tests -- --ignored --test-threads=1 --nocapture
 ATTACK_RESULT=$?
 print_status "Attack Detection Tests"
 echo ""
 
-# Test 7: Access Control Regression Tests
+# Test 8: Access Control Regression Tests
 echo "→ Running access control regression tests..."
 cargo test --package rust-v-hsm-can --test access_control_regression_tests -- --ignored --test-threads=1 --nocapture
 ACCESS_RESULT=$?
 print_status "Access Control Tests"
 echo ""
 
-# Test 8: Replay Protection Regression Tests
+# Test 9: Replay Protection Regression Tests
 echo "→ Running replay protection regression tests..."
 cargo test --package rust-v-hsm-can --test replay_protection_regression_tests -- --ignored --test-threads=1 --nocapture
 REPLAY_RESULT=$?
 print_status "Replay Protection Tests"
 echo ""
 
-# Test 9: Anomaly IDS Regression Tests
+# Test 10: Anomaly IDS Regression Tests
 echo "→ Running anomaly IDS regression tests..."
 cargo test --package autonomous_vehicle_sim --test anomaly_ids_regression_tests -- --ignored --test-threads=1 --nocapture
 ANOMALY_RESULT=$?
