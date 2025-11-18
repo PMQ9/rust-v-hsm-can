@@ -8,8 +8,10 @@
 
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+
+use super::crypto::{decrypt_aes256_gcm, encrypt_aes256_gcm};
 
 /// Session key state in its lifecycle
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -361,8 +363,7 @@ impl KeyRotationManager {
     pub fn export_key(&self, key_id: u32, key_encryption_key: &[u8; 32]) -> Option<Vec<u8>> {
         let key = self.session_keys.get(&key_id)?;
 
-        // Encrypt key material with key_encryption_key using AES-256-GCM would be ideal,
-        // but for simplicity we'll use HMAC-based encryption (stream cipher via HKDF)
+        // Encrypt key material with AES-256-GCM (provides confidentiality + authenticity)
         let encrypted = encrypt_key_simple(&key.key_material, key_encryption_key, key_id);
 
         Some(encrypted)
@@ -431,53 +432,76 @@ pub fn derive_session_key_hkdf(
     okm
 }
 
-/// Simple key encryption using HMAC-based stream cipher (for key distribution)
-/// In production, use AES-256-GCM or ChaCha20-Poly1305
+/// Encrypt key using AES-256-GCM authenticated encryption (for secure key distribution)
+///
+/// Uses AES-256-GCM which provides:
+/// - Confidentiality: Key material is encrypted
+/// - Authenticity: 128-bit authentication tag prevents tampering
+/// - Integrity: Detects any modifications to encrypted key
+///
+/// Security properties:
+/// - Nonce is derived deterministically from key_id and KEK (unique per key_id)
+/// - Associated data includes key_id to bind encryption to specific key
+/// - Returns encrypted key with authentication tag (32 + 16 = 48 bytes)
 fn encrypt_key_simple(key: &[u8; 32], kek: &[u8; 32], key_id: u32) -> Vec<u8> {
-    use hkdf::Hkdf;
+    // Derive deterministic nonce from KEK and key_id (96 bits / 12 bytes)
+    // This ensures nonce is unique per key_id and reproducible for the same KEK
+    let mut hasher = Sha256::new();
+    hasher.update(b"AES-GCM-NONCE-V1");
+    hasher.update(kek);
+    hasher.update(&key_id.to_le_bytes());
+    let hash = hasher.finalize();
+    let mut nonce = [0u8; 12];
+    nonce.copy_from_slice(&hash[0..12]);
 
-    // Derive encryption stream from KEK
-    let mut info = Vec::new();
-    info.extend_from_slice(b"KEY-ENCRYPTION-STREAM");
-    info.extend_from_slice(&key_id.to_le_bytes());
+    // Additional authenticated data (not encrypted, but authenticated)
+    let mut aad = Vec::new();
+    aad.extend_from_slice(b"KEY-ENCRYPTION-V1");
+    aad.extend_from_slice(&key_id.to_le_bytes());
 
-    let hkdf = Hkdf::<Sha256>::new(None, kek);
-    let mut stream = [0u8; 32];
-    hkdf.expand(&info, &mut stream).expect("32 bytes is valid");
-
-    // XOR with key material
-    let mut encrypted = [0u8; 32];
-    for i in 0..32 {
-        encrypted[i] = key[i] ^ stream[i];
-    }
-
-    encrypted.to_vec()
+    // Encrypt with AES-256-GCM
+    encrypt_aes256_gcm(key, kek, &nonce, &aad)
+        .expect("AES-256-GCM encryption should not fail with valid inputs")
 }
 
-/// Simple key decryption (inverse of encrypt_key_simple)
+/// Decrypt key using AES-256-GCM (inverse of encrypt_key_simple)
+///
+/// Verifies authentication tag and decrypts key material.
+/// Returns None if:
+/// - Wrong KEK
+/// - Tampered ciphertext
+/// - Wrong key_id (AAD mismatch)
+/// - Invalid ciphertext length
 fn decrypt_key_simple(encrypted: &[u8], kek: &[u8; 32], key_id: u32) -> Option<[u8; 32]> {
-    if encrypted.len() != 32 {
+    // Expected length: 32 bytes (key) + 16 bytes (auth tag) = 48 bytes
+    if encrypted.len() != 48 {
         return None;
     }
 
-    use hkdf::Hkdf;
+    // Derive nonce (must match encryption nonce)
+    let mut hasher = Sha256::new();
+    hasher.update(b"AES-GCM-NONCE-V1");
+    hasher.update(kek);
+    hasher.update(&key_id.to_le_bytes());
+    let hash = hasher.finalize();
+    let mut nonce = [0u8; 12];
+    nonce.copy_from_slice(&hash[0..12]);
 
-    // Derive decryption stream from KEK
-    let mut info = Vec::new();
-    info.extend_from_slice(b"KEY-ENCRYPTION-STREAM");
-    info.extend_from_slice(&key_id.to_le_bytes());
+    // Additional authenticated data (must match encryption AAD)
+    let mut aad = Vec::new();
+    aad.extend_from_slice(b"KEY-ENCRYPTION-V1");
+    aad.extend_from_slice(&key_id.to_le_bytes());
 
-    let hkdf = Hkdf::<Sha256>::new(None, kek);
-    let mut stream = [0u8; 32];
-    hkdf.expand(&info, &mut stream).expect("32 bytes is valid");
+    // Decrypt and verify authentication tag
+    let decrypted = decrypt_aes256_gcm(encrypted, kek, &nonce, &aad).ok()?;
 
-    // XOR to decrypt
-    let mut decrypted = [0u8; 32];
-    for i in 0..32 {
-        decrypted[i] = encrypted[i] ^ stream[i];
+    if decrypted.len() != 32 {
+        return None;
     }
 
-    Some(decrypted)
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&decrypted);
+    Some(key)
 }
 
 #[cfg(test)]
@@ -568,9 +592,13 @@ mod tests {
         let key_id = 42;
 
         let encrypted = encrypt_key_simple(&key, &kek1, key_id);
-        let decrypted = decrypt_key_simple(&encrypted, &kek2, key_id).unwrap();
+        let decrypted = decrypt_key_simple(&encrypted, &kek2, key_id);
 
-        assert_ne!(key, decrypted, "Wrong KEK should not decrypt correctly");
+        // With AES-256-GCM, wrong KEK should cause authentication failure (return None)
+        assert!(
+            decrypted.is_none(),
+            "Decryption with wrong KEK should fail due to authentication tag mismatch"
+        );
     }
 
     #[test]
@@ -672,9 +700,26 @@ mod tests {
         let master_key2 = [0x66u8; 32]; // Different master key
         let mut manager2 = KeyRotationManager::with_default_policy(master_key2, "ECU2".to_string());
 
-        let result = manager2.import_key(key_id + 1, &exported, &kek);
-        assert!(result.is_ok(), "Import should succeed");
-        assert_eq!(manager2.current_key_id(), key_id + 1);
+        // Import key with same key_id as export (key_id is part of AES-GCM AAD, must match)
+        let result = manager2.import_key(key_id, &exported, &kek);
+        assert!(
+            result.is_err(),
+            "Import should fail due to key_id rollback protection (key_id {} <= current {})",
+            key_id,
+            manager2.current_key_id()
+        );
+
+        // Import with next key_id should work if we use the correct key_id for export/import
+        let next_key_id = manager2.current_key_id() + 1;
+        manager.rotate_key();
+        let exported2 = manager.export_key(next_key_id, &kek).unwrap();
+        let result2 = manager2.import_key(next_key_id, &exported2, &kek);
+        assert!(
+            result2.is_ok(),
+            "Import should succeed with matching key_id: {:?}",
+            result2.err()
+        );
+        assert_eq!(manager2.current_key_id(), next_key_id);
     }
 
     #[test]

@@ -57,7 +57,7 @@ impl SignedConfig {
         version: String,
         data: Vec<u8>,
         signer: String,
-        hsm: &VirtualHSM,
+        _hsm: &VirtualHSM,
     ) -> Self {
         // Compute fingerprint (SHA256)
         let fingerprint: [u8; 32] = {

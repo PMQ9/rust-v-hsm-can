@@ -9,11 +9,11 @@
 /// - 10.4.1: Security monitoring and detection
 /// - 10.4.2: Pattern recognition for attack detection
 use crate::error_handling::ValidationError;
-use crate::incident_response::{IncidentCategory, IncidentSeverity};
+use crate::incident_response::IncidentSeverity;
 use chrono::{DateTime, Duration, Utc};
 use colored::*;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::fmt;
 
 /// Time window for event correlation (seconds)
