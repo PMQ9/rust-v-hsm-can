@@ -566,8 +566,8 @@ impl TaraGenerator {
             risk_summary: RiskSummary {
                 total_threats: self.threats.len(),
                 threats_by_risk_level: threats_by_risk,
-                threats_by_type: threats_by_type,
-                threats_by_asset: threats_by_asset,
+                threats_by_type,
+                threats_by_asset,
                 high_risk_count,
                 medium_risk_count,
                 low_risk_count,
@@ -625,7 +625,7 @@ impl TaraGenerator {
         for (idx, asset) in analysis.assets.iter().enumerate() {
             report.push_str(&format!("{}. {}\n", idx + 1, asset));
         }
-        report.push_str("\n");
+        report.push('\n');
 
         // Threat Scenarios (sorted by risk level, highest first)
         report.push_str("───────────────────────────────────────────────────────────────────\n");
@@ -682,19 +682,19 @@ impl TaraGenerator {
         for (risk_level, count) in &analysis.risk_summary.threats_by_risk_level {
             report.push_str(&format!("  {}: {}\n", risk_level, count));
         }
-        report.push_str("\n");
+        report.push('\n');
 
         report.push_str("Threats by Type:\n");
         for (threat_type, count) in &analysis.risk_summary.threats_by_type {
             report.push_str(&format!("  {}: {}\n", threat_type, count));
         }
-        report.push_str("\n");
+        report.push('\n');
 
         report.push_str("Threats by Asset:\n");
         for (asset, count) in &analysis.risk_summary.threats_by_asset {
             report.push_str(&format!("  {}: {}\n", asset, count));
         }
-        report.push_str("\n");
+        report.push('\n');
 
         report.push_str("═══════════════════════════════════════════════════════════════════\n");
         report.push_str("                        END OF TARA REPORT\n");

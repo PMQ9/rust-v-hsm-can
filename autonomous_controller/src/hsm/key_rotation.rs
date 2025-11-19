@@ -190,12 +190,12 @@ impl KeyRotationPolicy {
         let now = Utc::now();
 
         // Time-based check
-        if self.time_based_enabled {
-            if let Some(activation_time) = key.activation_time {
-                let elapsed = (now - activation_time).num_seconds();
-                if elapsed >= self.rotation_interval_secs {
-                    return true;
-                }
+        if self.time_based_enabled
+            && let Some(activation_time) = key.activation_time
+        {
+            let elapsed = (now - activation_time).num_seconds();
+            if elapsed >= self.rotation_interval_secs {
+                return true;
             }
         }
 
@@ -320,10 +320,10 @@ impl KeyRotationManager {
 
     /// Check if rotation should happen and rotate if needed
     pub fn check_and_rotate(&mut self) -> Option<u32> {
-        if let Some(active_key) = self.get_active_key() {
-            if self.policy.should_rotate(active_key) {
-                return Some(self.rotate_key());
-            }
+        if let Some(active_key) = self.get_active_key()
+            && self.policy.should_rotate(active_key)
+        {
+            return Some(self.rotate_key());
         }
         None
     }
@@ -334,10 +334,11 @@ impl KeyRotationManager {
 
         // Mark expired keys
         for key in self.session_keys.values_mut() {
-            if let Some(expiry) = key.expiry_time {
-                if now >= expiry && key.state != KeyState::Expired {
-                    key.mark_expired();
-                }
+            if let Some(expiry) = key.expiry_time
+                && now >= expiry
+                && key.state != KeyState::Expired
+            {
+                key.mark_expired();
             }
         }
 
@@ -512,7 +513,7 @@ fn decrypt_key_simple(encrypted: &[u8], kek: &[u8; 32], key_id: u32) -> Option<[
         let mut hasher = Sha256::new();
         hasher.update(b"AES-GCM-NONCE-V1");
         hasher.update(kek);
-        hasher.update(&key_id.to_le_bytes());
+        hasher.update(key_id.to_le_bytes());
         let hash = hasher.finalize();
         let mut nonce = [0u8; 12];
         nonce.copy_from_slice(&hash[0..12]);

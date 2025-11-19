@@ -14,8 +14,8 @@ use colored::*;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// Maximum number of firmware versions to keep in history
-///const MAX_FIRMWARE_HISTORY: usize = 3;
+// Maximum number of firmware versions to keep in history
+// const MAX_FIRMWARE_HISTORY: usize = 3;
 
 /// Firmware update status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -169,13 +169,13 @@ impl FirmwareRollbackManager {
         }
 
         // Verify version progression (no downgrades without explicit rollback)
-        if let Some(ref current) = self.current_firmware {
-            if !self.is_version_newer(&new_firmware.version, &current.version) {
-                return Err(format!(
-                    "Version downgrade not allowed: {} -> {}. Use explicit rollback instead.",
-                    current.version, new_firmware.version
-                ));
-            }
+        if let Some(ref current) = self.current_firmware
+            && !self.is_version_newer(&new_firmware.version, &current.version)
+        {
+            return Err(format!(
+                "Version downgrade not allowed: {} -> {}. Use explicit rollback instead.",
+                current.version, new_firmware.version
+            ));
         }
 
         println!();
@@ -500,7 +500,7 @@ impl FirmwareRollbackManager {
             }
 
             report.push_str(&format!("  Boot Attempts: {}\n", record.boot_attempts));
-            report.push_str("\n");
+            report.push('\n');
         }
 
         report.push_str("═══════════════════════════════════════════════════════════\n");

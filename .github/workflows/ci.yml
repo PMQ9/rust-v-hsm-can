@@ -72,7 +72,7 @@ jobs:
 
     - name: Run anomaly IDS regression tests
       id: anomaly-tests
-      run: cargo test --package autonomous_vehicle_sim --test anomaly_ids_regression_tests -- --ignored --test-threads=1 --nocapture 2>&1 | tee anomaly-tests.log
+      run: cargo test --package autonomous_vehicle_sim --test anomaly_ids_regression_tests --features allow_training -- --ignored --test-threads=1 --nocapture 2>&1 | tee anomaly-tests.log
       continue-on-error: false
 
     - name: Generate Test Summary
@@ -105,7 +105,7 @@ jobs:
         ATTACK_TESTS=$(grep -c "Test PASSED" attack-tests.log 2>/dev/null || echo "0")
         ACCESS_TESTS=$(grep -c "Test passed:" access-tests.log 2>/dev/null || echo "0")
         REPLAY_TESTS=$(grep -c "Test PASSED" replay-tests.log 2>/dev/null || echo "0")
-        ANOMALY_TESTS=$(grep -c "Test Passed" anomaly-tests.log 2>/dev/null || echo "0")
+        ANOMALY_TESTS=$(grep -c " Passed ===" anomaly-tests.log 2>/dev/null || echo "0")
 
         # Sanitize all variables
         UNIT_TESTS=$(safe_count "$UNIT_TESTS")

@@ -2,6 +2,30 @@
 
 ## 2025-11-19
 
+### CI/CD Fixes and Code Quality Improvements
+
+**Fixed Issues:**
+
+1. **GitHub Actions Deprecated Actions**
+   - Replaced deprecated `actions-rs/toolchain@v1` with `dtolnay/rust-toolchain@stable`
+   - Eliminates 4 warnings about deprecated `set-output` command
+   - Files: `.github/workflows/ci.yml`
+
+2. **Anomaly IDS Regression Tests Not Running in CI**
+   - Added `--features allow_training` flag to anomaly test command
+   - Fixed test count pattern to match all 6 tests (was only matching 5)
+   - Changed pattern from "Test Passed" to " Passed ===" to catch all variants
+   - Files: `.github/workflows/ci.yml`, `run_ci_tests.sh`
+
+3. **Fixed All Clippy Warnings** (17 total)
+   - Converted doc comments (`///`) to regular comments (`//`) for commented-out constants
+   - Fixed redundant field names in struct initialization
+   - Collapsed nested if statements using `&&` let-chains
+   - Replaced `push_str("\n")` with `push('\n')` for single-character strings
+   - Fixed useless `format!()` calls
+   - Removed borrowed expression where not needed
+   - Files: Multiple (firmware_rollback.rs, security_correlation.rs, tara.rs, incident_response.rs, hsm/core.rs, hsm/key_rotation.rs, bin/iso21434_audit_report.rs, bin/monitor.rs)
+
 ### Security Audit Remediation - HIGH/MEDIUM Priority Fixes
 
 **Fixed Issues:**

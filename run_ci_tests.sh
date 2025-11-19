@@ -92,7 +92,7 @@ echo ""
 
 # Test 10: Anomaly IDS Regression Tests
 echo "→ Running anomaly IDS regression tests..."
-cargo test --package autonomous_vehicle_sim --test anomaly_ids_regression_tests -- --ignored --test-threads=1 --nocapture
+cargo test --package autonomous_vehicle_sim --test anomaly_ids_regression_tests --features allow_training -- --ignored --test-threads=1 --nocapture
 ANOMALY_RESULT=$?
 print_status "Anomaly IDS Tests"
 echo ""

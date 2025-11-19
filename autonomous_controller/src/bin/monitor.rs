@@ -725,7 +725,7 @@ impl Dashboard {
             stdout,
             "\r  {} Threat Level: {} | Security Rate: {:.1}% | Unique CAN IDs: {}",
             "ℹ".magenta(),
-            format!("{}", threat_label)
+            threat_label.to_string()
                 .color(threat_color.as_str())
                 .bold(),
             security_rate,

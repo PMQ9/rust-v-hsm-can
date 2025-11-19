@@ -900,13 +900,11 @@ impl VirtualHSM {
         // Otherwise, look up session key from rotation manager
         // Note: This assumes we have the sender's key rotation manager or shared keys
         // For now, we'll use the receiver's own rotation manager (assumes synchronized rotation)
-        if let Some(manager) = &self.key_rotation_manager {
-            if let Some(session_key) = manager.get_key_by_id(key_version) {
-                // Check if key is still valid for RX
-                if session_key.is_valid_for_rx() {
-                    return Some(session_key.key_material);
-                }
-            }
+        if let Some(manager) = &self.key_rotation_manager
+            && let Some(session_key) = manager.get_key_by_id(key_version)
+            && session_key.is_valid_for_rx()
+        {
+            return Some(session_key.key_material);
         }
 
         None
