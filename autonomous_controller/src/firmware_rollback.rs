@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Maximum number of firmware versions to keep in history
-const MAX_FIRMWARE_HISTORY: usize = 3;
+///const MAX_FIRMWARE_HISTORY: usize = 3;
 
 /// Firmware update status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
