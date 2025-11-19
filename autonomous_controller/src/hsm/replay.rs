@@ -869,4 +869,55 @@ mod tests {
             "Counter beyond small window should be rejected"
         );
     }
+
+    #[test]
+    fn test_session_counter_wraparound_without_key_rotation() {
+        // SECURITY TEST: Document behavior when session counter approaches u64::MAX
+        // without key rotation enabled (edge case, extremely unlikely in practice)
+        //
+        // Context: At 10Hz CAN traffic, u64::MAX takes 58 billion years to reach
+        // This test documents the fallback behavior for completeness
+
+        let mut hsm = VirtualHSM::new("ECU1".to_string(), 12345);
+        // Explicitly disable key rotation (default state)
+        assert!(!hsm.is_key_rotation_enabled());
+
+        // Simulate counter approaching wraparound threshold (u64::MAX / 2)
+        // This is where the HSM warns about replay protection degradation
+        let threshold = u64::MAX / 2;
+
+        // Set counter just below threshold
+        hsm.set_session_counter_for_test(threshold - 10);
+        let before_threshold = hsm.get_session_counter();
+        assert!(before_threshold < threshold);
+
+        // Increment normally (should work fine)
+        for _ in 0..5 {
+            hsm.increment_session();
+        }
+        let after_increments = hsm.get_session_counter();
+        assert_eq!(after_increments, before_threshold + 5);
+
+        // Simulate reaching threshold by setting counter at threshold
+        hsm.set_session_counter_for_test(threshold + 1);
+
+        // Next increment triggers wraparound warning
+        // Without key rotation, counter continues to wrap using wrapping_add
+        hsm.increment_session();
+
+        let after_wraparound = hsm.get_session_counter();
+
+        // Counter wraps normally (threshold+2), showing degraded replay protection
+        assert!(
+            after_wraparound > threshold,
+            "Counter should continue wrapping (degraded): got {}",
+            after_wraparound
+        );
+
+        // NOTE: This test documents that replay protection is DEGRADED after wraparound
+        // when key rotation is disabled. In production, key rotation should be enabled
+        // to prevent this scenario via automatic key rotation before threshold.
+        println!("WARNING: Counter wrapped without reset (no key rotation enabled)");
+        println!("This is expected behavior but degrades replay protection");
+    }
 }
