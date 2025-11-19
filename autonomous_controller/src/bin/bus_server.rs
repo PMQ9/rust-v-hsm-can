@@ -15,6 +15,12 @@ const BUFFER_SIZE: usize = 10000; // Increased for 9 ECUs @ 10Hz (~100 fps) = ~1
 /// SECURITY FIX: Must match MAX_MESSAGE_SIZE in network.rs
 const MAX_MESSAGE_SIZE: usize = 64 * 1024; // 64 KB
 
+/// Maximum number of concurrent connections to prevent connection flooding DoS
+/// SECURITY FIX: Limit concurrent connections to prevent file descriptor exhaustion
+/// Typical autonomous vehicle: 9 ECUs + 1 monitor + 10 spare = 20 connections
+/// Set to 50 to allow generous headroom for development/testing
+const MAX_CONNECTIONS: usize = 50;
+
 type ClientMap = Arc<Mutex<HashMap<String, tokio::net::tcp::OwnedWriteHalf>>>;
 
 #[tokio::main]
@@ -57,6 +63,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "{} Rate limiting enabled: 200 msg burst, 100 msg/sec sustained per ECU",
         "ℹ".bright_blue()
     );
+    println!(
+        "{} Connection limiting enabled: max {} concurrent connections",
+        "ℹ".bright_blue(),
+        MAX_CONNECTIONS
+    );
 
     let listener = TcpListener::bind(BUS_ADDRESS).await?;
     println!(
@@ -65,28 +76,59 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     println!();
 
-    let mut client_count = 0u32;
+    // Track active connections for connection limiting
+    let active_connections = Arc::new(Mutex::new(0usize));
 
     loop {
         let (socket, addr) = listener.accept().await?;
-        client_count += 1;
+
+        // SECURITY FIX: Check connection limit before accepting
+        let mut conn_count = active_connections.lock().await;
+        if *conn_count >= MAX_CONNECTIONS {
+            eprintln!(
+                "{} Connection from {} REJECTED: Maximum connections ({}) reached",
+                "✗".red().bold(),
+                addr.to_string().bright_white(),
+                MAX_CONNECTIONS
+            );
+            // Drop socket connection immediately
+            drop(socket);
+            drop(conn_count);
+            continue;
+        }
+
+        *conn_count += 1;
+        let current_connections = *conn_count;
+        drop(conn_count);
 
         println!(
-            "{} New connection from {} (Total clients: {})",
+            "{} New connection from {} (Active connections: {}/{})",
             "→".cyan(),
             addr.to_string().bright_white(),
-            client_count.to_string().bright_cyan()
+            current_connections.to_string().bright_cyan(),
+            MAX_CONNECTIONS
         );
 
         let tx = Arc::clone(&tx);
         let clients = Arc::clone(&clients);
         let rate_limiter = rate_limiter.clone();
+        let active_connections_clone = Arc::clone(&active_connections);
 
         // Spawn a task to handle this client
         tokio::spawn(async move {
             if let Err(e) = handle_client(socket, tx, clients, rate_limiter).await {
                 eprintln!("{} Client error: {}", "✗".red(), e);
             }
+
+            // SECURITY FIX: Decrement connection count when client disconnects
+            let mut conn_count = active_connections_clone.lock().await;
+            *conn_count = conn_count.saturating_sub(1);
+            println!(
+                "{} Connection closed (Active connections: {}/{})",
+                "→".bright_black(),
+                *conn_count,
+                MAX_CONNECTIONS
+            );
         });
     }
 }

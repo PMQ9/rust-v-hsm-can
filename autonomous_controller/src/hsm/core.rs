@@ -295,6 +295,15 @@ impl VirtualHSM {
         self.session_counter
     }
 
+    /// Set session counter directly (for testing edge cases only)
+    /// DO NOT use in production - this bypasses replay protection
+    ///
+    /// Note: Available in both unit tests and integration tests
+    #[doc(hidden)]
+    pub fn set_session_counter_for_test(&mut self, value: u64) {
+        self.session_counter = value;
+    }
+
     /// Increment session counter with wraparound protection
     ///
     /// SECURITY FIX: Detects counter wraparound and triggers key rotation

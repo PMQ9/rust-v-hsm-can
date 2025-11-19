@@ -97,6 +97,13 @@ ANOMALY_RESULT=$?
 print_status "Anomaly IDS Tests"
 echo ""
 
+# Test 11: Security Regression Tests
+echo "→ Running security regression tests..."
+cargo test --package autonomous_vehicle_sim --test security_regression_tests -- --ignored --test-threads=1 --nocapture
+SECURITY_RESULT=$?
+print_status "Security Regression Tests"
+echo ""
+
 # Final Summary
 echo "═══════════════════════════════════════════════════════════════════════════"
 if [ $FAILED -eq 0 ]; then

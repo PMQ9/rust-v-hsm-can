@@ -1,4 +1,21 @@
 # Changelog
+
+## 2025-11-19
+
+### Security Audit Completion
+Fixed 3 medium/low severity issues.
+
+**Added:**
+- Security regression test suite (15 tests covering attack scenarios and edge cases)
+- Connection flooding protection (MAX_CONNECTIONS = 50 limit in bus_server)
+- Session counter wraparound test and documentation
+- RNG safety documentation (critical warning about deterministic vs hardware RNG)
+
+**Fixed:**
+- MEDIUM: Connection flooding DoS - Limit concurrent connections to prevent file descriptor exhaustion
+- MEDIUM: Session counter edge case - Added test documenting wraparound behavior at u64::MAX/2
+- LOW: RNG mode confusion - Comprehensive docs warning against VirtualHSM::new() in production
+
 ## 2025-11-18 (Security Audit Fixes)
 
 ### Comprehensive Security Audit - Critical Vulnerability Fixes
