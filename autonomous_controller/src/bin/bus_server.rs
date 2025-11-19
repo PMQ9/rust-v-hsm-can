@@ -11,6 +11,10 @@ use tokio::sync::{Mutex, broadcast};
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
 const BUFFER_SIZE: usize = 10000; // Increased for 9 ECUs @ 10Hz (~100 fps) = ~100 seconds of buffering
 
+/// Maximum message size in bytes to prevent DoS via memory exhaustion
+/// SECURITY FIX: Must match MAX_MESSAGE_SIZE in network.rs
+const MAX_MESSAGE_SIZE: usize = 64 * 1024; // 64 KB
+
 type ClientMap = Arc<Mutex<HashMap<String, tokio::net::tcp::OwnedWriteHalf>>>;
 
 #[tokio::main]
@@ -99,7 +103,20 @@ async fn handle_client(
 
     // Wait for client registration
     let mut line = String::new();
-    reader.read_line(&mut line).await?;
+    let bytes_read = reader.read_line(&mut line).await?;
+
+    // SECURITY FIX: Validate message size before deserialization
+    if bytes_read == 0 {
+        return Err("Connection closed during registration".into());
+    }
+    if line.len() > MAX_MESSAGE_SIZE {
+        return Err(format!(
+            "Registration message too large: {} bytes (max: {})",
+            line.len(),
+            MAX_MESSAGE_SIZE
+        )
+        .into());
+    }
 
     let msg: NetMessage = serde_json::from_str(&line)?;
     let client_name = match msg {
@@ -184,6 +201,18 @@ async fn handle_client(
         if n == 0 {
             // Connection closed
             break;
+        }
+
+        // SECURITY FIX: Validate message size before deserialization
+        if line.len() > MAX_MESSAGE_SIZE {
+            eprintln!(
+                "{} Message from {} too large: {} bytes (max: {}), dropping",
+                "⚠".yellow(),
+                client_name.bright_cyan(),
+                line.len(),
+                MAX_MESSAGE_SIZE
+            );
+            continue; // Drop oversized message but keep connection alive
         }
 
         let msg: NetMessage = serde_json::from_str(&line)?;

@@ -439,32 +439,41 @@ pub fn derive_session_key_hkdf(
 /// - Authenticity: 128-bit authentication tag prevents tampering
 /// - Integrity: Detects any modifications to encrypted key
 ///
+/// SECURITY FIX: Uses random nonces to prevent nonce reuse attacks
 /// Security properties:
-/// - Nonce is derived deterministically from key_id and KEK (unique per key_id)
+/// - Nonce is randomly generated for each encryption (prevents reuse)
 /// - Associated data includes key_id to bind encryption to specific key
-/// - Returns encrypted key with authentication tag (32 + 16 = 48 bytes)
+/// - Returns [nonce: 12 bytes] + [ciphertext + auth_tag: 48 bytes] = 60 bytes total
 fn encrypt_key_simple(key: &[u8; 32], kek: &[u8; 32], key_id: u32) -> Vec<u8> {
-    // Derive deterministic nonce from KEK and key_id (96 bits / 12 bytes)
-    // This ensures nonce is unique per key_id and reproducible for the same KEK
-    let mut hasher = Sha256::new();
-    hasher.update(b"AES-GCM-NONCE-V1");
-    hasher.update(kek);
-    hasher.update(&key_id.to_le_bytes());
-    let hash = hasher.finalize();
+    use rand::RngCore;
+
+    // SECURITY FIX: Generate cryptographically secure random nonce (96 bits / 12 bytes)
+    // This prevents catastrophic nonce reuse if key_id is ever reused
+    // (e.g., after system reset, key rollback, or counter wraparound)
     let mut nonce = [0u8; 12];
-    nonce.copy_from_slice(&hash[0..12]);
+    rand::rngs::OsRng.fill_bytes(&mut nonce);
 
     // Additional authenticated data (not encrypted, but authenticated)
     let mut aad = Vec::new();
-    aad.extend_from_slice(b"KEY-ENCRYPTION-V1");
+    aad.extend_from_slice(b"KEY-ENCRYPTION-V2"); // V2 = random nonce format
     aad.extend_from_slice(&key_id.to_le_bytes());
 
     // Encrypt with AES-256-GCM
-    encrypt_aes256_gcm(key, kek, &nonce, &aad)
-        .expect("AES-256-GCM encryption should not fail with valid inputs")
+    let ciphertext = encrypt_aes256_gcm(key, kek, &nonce, &aad)
+        .expect("AES-256-GCM encryption should not fail with valid inputs");
+
+    // Prepend nonce to ciphertext for transmission
+    // Format: [nonce: 12 bytes] + [encrypted_key + auth_tag: 48 bytes] = 60 bytes
+    let mut result = Vec::with_capacity(12 + ciphertext.len());
+    result.extend_from_slice(&nonce);
+    result.extend_from_slice(&ciphertext);
+    result
 }
 
 /// Decrypt key using AES-256-GCM (inverse of encrypt_key_simple)
+///
+/// SECURITY FIX: Supports both V1 (deterministic nonce) and V2 (random nonce) formats
+/// for backward compatibility during migration
 ///
 /// Verifies authentication tag and decrypts key material.
 /// Returns None if:
@@ -473,35 +482,60 @@ fn encrypt_key_simple(key: &[u8; 32], kek: &[u8; 32], key_id: u32) -> Vec<u8> {
 /// - Wrong key_id (AAD mismatch)
 /// - Invalid ciphertext length
 fn decrypt_key_simple(encrypted: &[u8], kek: &[u8; 32], key_id: u32) -> Option<[u8; 32]> {
-    // Expected length: 32 bytes (key) + 16 bytes (auth tag) = 48 bytes
-    if encrypted.len() != 48 {
-        return None;
+    // Check format based on length
+    if encrypted.len() == 60 {
+        // V2 format: [nonce: 12 bytes] + [ciphertext + auth_tag: 48 bytes]
+        let nonce_bytes = &encrypted[0..12];
+        let ciphertext = &encrypted[12..60];
+
+        let mut nonce = [0u8; 12];
+        nonce.copy_from_slice(nonce_bytes);
+
+        // Additional authenticated data (must match encryption AAD)
+        let mut aad = Vec::new();
+        aad.extend_from_slice(b"KEY-ENCRYPTION-V2");
+        aad.extend_from_slice(&key_id.to_le_bytes());
+
+        // Decrypt and verify authentication tag
+        let decrypted = decrypt_aes256_gcm(ciphertext, kek, &nonce, &aad).ok()?;
+
+        if decrypted.len() != 32 {
+            return None;
+        }
+
+        let mut key = [0u8; 32];
+        key.copy_from_slice(&decrypted);
+        Some(key)
+    } else if encrypted.len() == 48 {
+        // V1 format (legacy): deterministic nonce, 48 bytes ciphertext
+        // SECURITY WARNING: V1 format vulnerable to nonce reuse - should migrate to V2
+        let mut hasher = Sha256::new();
+        hasher.update(b"AES-GCM-NONCE-V1");
+        hasher.update(kek);
+        hasher.update(&key_id.to_le_bytes());
+        let hash = hasher.finalize();
+        let mut nonce = [0u8; 12];
+        nonce.copy_from_slice(&hash[0..12]);
+
+        // Additional authenticated data (must match encryption AAD)
+        let mut aad = Vec::new();
+        aad.extend_from_slice(b"KEY-ENCRYPTION-V1");
+        aad.extend_from_slice(&key_id.to_le_bytes());
+
+        // Decrypt and verify authentication tag
+        let decrypted = decrypt_aes256_gcm(encrypted, kek, &nonce, &aad).ok()?;
+
+        if decrypted.len() != 32 {
+            return None;
+        }
+
+        let mut key = [0u8; 32];
+        key.copy_from_slice(&decrypted);
+        Some(key)
+    } else {
+        // Invalid length
+        None
     }
-
-    // Derive nonce (must match encryption nonce)
-    let mut hasher = Sha256::new();
-    hasher.update(b"AES-GCM-NONCE-V1");
-    hasher.update(kek);
-    hasher.update(&key_id.to_le_bytes());
-    let hash = hasher.finalize();
-    let mut nonce = [0u8; 12];
-    nonce.copy_from_slice(&hash[0..12]);
-
-    // Additional authenticated data (must match encryption AAD)
-    let mut aad = Vec::new();
-    aad.extend_from_slice(b"KEY-ENCRYPTION-V1");
-    aad.extend_from_slice(&key_id.to_le_bytes());
-
-    // Decrypt and verify authentication tag
-    let decrypted = decrypt_aes256_gcm(encrypted, kek, &nonce, &aad).ok()?;
-
-    if decrypted.len() != 32 {
-        return None;
-    }
-
-    let mut key = [0u8; 32];
-    key.copy_from_slice(&decrypted);
-    Some(key)
 }
 
 #[cfg(test)]
