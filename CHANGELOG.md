@@ -2,6 +2,62 @@
 
 ## 2025-11-19
 
+### CI/CD Fixes and Code Quality Improvements
+
+**Fixed Issues:**
+
+1. **GitHub Actions Deprecated Actions**
+   - Replaced deprecated `actions-rs/toolchain@v1` with `dtolnay/rust-toolchain@stable`
+   - Eliminates 4 warnings about deprecated `set-output` command
+   - Files: `.github/workflows/ci.yml`
+
+2. **Anomaly IDS Regression Tests Not Running in CI**
+   - Added `--features allow_training` flag to anomaly test command
+   - Fixed test count pattern to match all 6 tests (was only matching 5)
+   - Changed pattern from "Test Passed" to " Passed ===" to catch all variants
+   - Files: `.github/workflows/ci.yml`, `run_ci_tests.sh`
+
+3. **Fixed All Clippy Warnings** (17 total)
+   - Converted doc comments (`///`) to regular comments (`//`) for commented-out constants
+   - Fixed redundant field names in struct initialization
+   - Collapsed nested if statements using `&&` let-chains
+   - Replaced `push_str("\n")` with `push('\n')` for single-character strings
+   - Fixed useless `format!()` calls
+   - Removed borrowed expression where not needed
+   - Files: Multiple (firmware_rollback.rs, security_correlation.rs, tara.rs, incident_response.rs, hsm/core.rs, hsm/key_rotation.rs, bin/iso21434_audit_report.rs, bin/monitor.rs)
+
+### Security Audit Remediation - HIGH/MEDIUM Priority Fixes
+
+**Fixed Issues:**
+
+1. **[HIGH] H-1: Timing Side-Channel in MAC Verification**
+   - **Risk:** ECU name lookup timing could leak information about registered ECUs
+   - **Fix:** Implemented constant-time ECU name lookup using SHA256 hashing
+   - **Implementation:** Hash ECU names to fixed-size identifiers before HashMap lookup
+   - **Files:** `autonomous_controller/src/hsm/core.rs` (lines 14-24, 53, 280-281, 387-390, 825-826)
+   - **Impact:** Eliminates timing-based information disclosure vulnerability
+
+2. **[MEDIUM] M-1: Session Counter Wraparound Security Degradation**
+   - **Risk:** Replay protection fails if counter wraps without key rotation
+   - **Fix:** Enforce mandatory key rotation in production builds
+   - **Implementation:** Production builds panic at counter threshold if rotation disabled; test builds allow wraparound for testing
+   - **Files:** `autonomous_controller/src/hsm/core.rs` (lines 334-368)
+   - **Impact:** Prevents replay protection failure in long-running systems
+
+3. **[MEDIUM] M-2: Network Authentication Weakness**
+   - **Risk:** TCP connections lack authentication (mitigated by MAC verification)
+   - **Fix:** Comprehensive documentation of network security model
+   - **Implementation:** Added security warnings to network module and CLAUDE.md
+   - **Files:** `autonomous_controller/src/network.rs` (lines 1-29), `CLAUDE.md` (lines 131-158)
+   - **Impact:** Clear understanding of security boundaries and production recommendations
+
+4. **[MEDIUM] M-3: Anomaly Training Mode Security**
+   - **Risk:** Attacker could retrain baseline to accept malicious traffic
+   - **Fix:** Added `allow_training` compile-time feature flag
+   - **Implementation:** Training methods disabled in production builds, only available with `--features allow_training`
+   - **Files:** `autonomous_controller/src/hsm/core.rs` (lines 644-757), `autonomous_controller/Cargo.toml` (lines 7-15, 127-130)
+   - **Impact:** Prevents baseline retraining attacks in deployed systems
+
 ### Security Audit Completion
 Fixed 3 medium/low severity issues.
 

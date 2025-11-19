@@ -558,7 +558,7 @@ impl IncidentResponseManager {
 
             for incident in self.active_incidents.values() {
                 report.push_str(&self.format_incident(incident));
-                report.push_str("\n");
+                report.push('\n');
             }
         }
 
@@ -569,7 +569,7 @@ impl IncidentResponseManager {
 
             for incident in self.incident_history.iter() {
                 report.push_str(&self.format_incident(incident));
-                report.push_str("\n");
+                report.push('\n');
             }
         }
 
@@ -602,7 +602,7 @@ impl IncidentResponseManager {
         }
 
         if incident.resolved {
-            output.push_str(&format!("Status: RESOLVED\n"));
+            output.push_str("Status: RESOLVED\n");
             if let Some(ref ts) = incident.resolution_timestamp {
                 output.push_str(&format!("Resolution Time: {}\n", ts));
             }
@@ -613,7 +613,7 @@ impl IncidentResponseManager {
             output.push_str("Status: ACTIVE\n");
         }
 
-        output.push_str("\n");
+        output.push('\n');
         output
     }
 }

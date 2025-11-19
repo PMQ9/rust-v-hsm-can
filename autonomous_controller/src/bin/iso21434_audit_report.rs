@@ -2,10 +2,7 @@
 ///
 /// Generates comprehensive security audit reports demonstrating ISO 21434 compliance.
 /// Aggregates data from all security subsystems to provide a holistic security posture assessment.
-use autonomous_vehicle_sim::{
-    AttackDetector, CorrelationEngine, FirmwareRollbackManager, IncidentResponseManager,
-    SecurityLogger, TaraGenerator, ValidationError, VirtualHSM,
-};
+use autonomous_vehicle_sim::TaraGenerator;
 use chrono::Utc;
 use colored::*;
 
@@ -318,7 +315,7 @@ fn generate_audit_report() -> String {
     for (category, count) in &tara_analysis.risk_summary.threats_by_type {
         report.push_str(&format!("    - {}: {}\n", category, count));
     }
-    report.push_str("\n");
+    report.push('\n');
 
     report.push_str("  Note: Full TARA report available separately via TARA generator\n");
     report.push_str("        Run: cargo run --bin generate_tara_report\n\n");

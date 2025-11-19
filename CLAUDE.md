@@ -128,12 +128,32 @@ Both projects support **two communication modes**:
 - Used by the `demo` binary for quick testing
 - Pattern: ECUs call `bus.send()` and `bus.subscribe()` directly
 
-### 2. Networked Mode (BusClient/BusServer)
+### 2. Networked Mode (BusClient/BusServer) - DEVELOPMENT/TESTING ONLY
+
+**SECURITY WARNING:** Networked mode is designed for **development and testing only**. Do NOT use in production without additional security measures.
+
 - **Location**: [src/network.rs](src/network.rs) and [src/bin/bus_server.rs](src/bin/bus_server.rs)
 - TCP-based communication with JSON-serialized messages
-- Bus server runs on port 9000 as central hub
+- Bus server runs on port 9000 as central hub (localhost only)
 - Each component (monitor, ECUs) connects as a client
 - Used by multi-terminal setup for distributed simulation
+
+**Network Security Model:**
+- **NO transport-layer authentication** - TCP connections are unauthenticated
+- **NO encryption** - Network traffic is plaintext JSON (for debugging/observability)
+- **Self-declared ECU names** - Clients register with any name (no verification)
+- **Real security boundary**: MAC verification with shared keys (application layer)
+  - Even if an attacker connects and spoofs an ECU name, they cannot generate valid MACs without the symmetric key
+  - Invalid MACs trigger attack detection and fail-safe mode
+- **Defense-in-depth**: Replay protection, access control, and anomaly detection provide additional layers
+
+**Production Recommendations:**
+1. **Use in-process mode** (`VirtualCanBus`) for production - eliminates network attack surface
+2. **If networked mode is required**, add:
+   - TLS with mutual authentication (client certificates)
+   - Pre-shared key verification during registration
+   - Network segmentation (firewall rules, VLANs)
+   - VPN or secure tunnel for inter-ECU communication
 
 **Key distinction**: In-process uses `VirtualCanBus` directly; networked mode uses `BusClient` to communicate with `bus_server` via TCP.
 

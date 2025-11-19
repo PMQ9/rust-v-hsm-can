@@ -1,3 +1,33 @@
+//! Network Communication Module
+//!
+//! **SECURITY WARNING: DEVELOPMENT/TESTING ONLY**
+//!
+//! This module provides TCP-based networked communication for the CAN bus simulator.
+//! It is designed for development, testing, and demonstration purposes.
+//!
+//! ## Security Model
+//!
+//! **Network Layer:** NO authentication, NO encryption
+//! - TCP connections are unauthenticated (anyone can connect)
+//! - ECU names are self-declared (no verification at network layer)
+//! - Traffic is plaintext JSON (for debugging/observability)
+//!
+//! **Application Layer:** Cryptographic authentication (HMAC-SHA256)
+//! - All CAN frames must have valid MAC (Message Authentication Code)
+//! - MAC keys are pre-shared secrets between trusted ECUs
+//! - Even if attacker connects and spoofs ECU name, they cannot forge MACs
+//! - Invalid MACs trigger attack detection and fail-safe mode
+//!
+//! ## Production Use
+//!
+//! **DO NOT use networked mode in production without additional security:**
+//! 1. Prefer in-process mode (VirtualCanBus) - eliminates network attack surface
+//! 2. If networked mode required, add TLS with mutual authentication
+//! 3. Implement pre-shared key verification during registration
+//! 4. Use network segmentation (firewall, VLANs)
+//!
+//! See CLAUDE.md "Network Security Model" section for full details.
+
 use crate::hsm::{PerformanceSnapshot, SecuredCanFrame};
 use crate::types::CanFrame;
 use serde::{Deserialize, Serialize};

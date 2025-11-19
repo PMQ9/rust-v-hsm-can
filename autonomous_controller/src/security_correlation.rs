@@ -19,8 +19,8 @@ use std::fmt;
 /// Time window for event correlation (seconds)
 const CORRELATION_WINDOW_SECS: i64 = 60;
 
-/// Minimum events required to trigger correlation alert
-///const MIN_CORRELATED_EVENTS: usize = 3;
+// Minimum events required to trigger correlation alert
+// const MIN_CORRELATED_EVENTS: usize = 3;
 
 /// Security event record for correlation analysis
 #[derive(Debug, Clone, Serialize, Deserialize)]
