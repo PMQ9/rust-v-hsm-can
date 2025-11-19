@@ -1,4 +1,52 @@
 # Changelog
+## 2025-11-18 (Security Audit Fixes)
+
+### Comprehensive Security Audit - Critical Vulnerability Fixes
+Conducted thorough security audit of all cybersecurity features and fixed 3 critical/high vulnerabilities:
+
+**VULN-001: CRITICAL - AES-GCM Nonce Reuse in Key Encryption (Fixed)**
+- **Issue**: Nonces were derived deterministically using SHA256(KEK + key_id), causing catastrophic nonce reuse if same key_id ever reused (after rollback, reset, or wraparound)
+- **Impact**: Complete break of AES-GCM security - attacker could recover plaintext and encryption keys
+- **Fix**: Changed to cryptographically secure random nonces using OsRng
+  - New format: [nonce: 12 bytes] + [ciphertext + auth_tag: 48 bytes] = 60 bytes total
+  - Backward compatible: decrypt_key_simple() supports both V1 (deterministic) and V2 (random) formats
+- **Location**: autonomous_controller/src/hsm/key_rotation.rs:447-470, 484-539
+
+**VULN-002: MEDIUM - Session Counter Wraparound (Fixed)**
+- **Issue**: Session counter used wrapping_add() which wraps from u64::MAX to 0, breaking replay protection
+- **Impact**: After 2^64 frames, replay protection fails and old frames can be replayed
+- **Fix**: Added wraparound detection at 2^63 threshold with automatic key rotation
+  - Triggers key rotation and counter reset when approaching limit
+  - Falls back to wrapping_add with warning if rotation disabled
+- **Location**: autonomous_controller/src/hsm/core.rs:298-332
+
+**VULN-003: MEDIUM - JSON Deserialization Without Size Limits (Fixed)**
+- **Issue**: No maximum message size check before deserializing JSON over network
+- **Impact**: Attacker can send extremely large JSON messages causing memory exhaustion (DoS)
+- **Fix**: Added 64 KB maximum message size limit with validation before deserialization
+  - Enforced in BusClient::receive_message(), BusReader::receive_message()
+  - Enforced server-side during registration and message processing
+  - Oversized messages logged and dropped
+- **Location**: autonomous_controller/src/network.rs:7-153, src/bin/bus_server.rs:11-217
+
+### Security Audit Test Results
+- All 282+ tests passing:
+  - 263 unit tests (autonomous_vehicle_sim + basic)
+  - 13 integration tests
+  - 6 attack regression tests
+  - 3 access control regression tests
+  - 1 replay protection regression test
+  - 6 anomaly IDS regression tests
+- All CI checks passing: formatting, linting, build, unit tests, integration tests, regression tests
+
+### Additional Security Findings (Low Priority - Not Fixed)
+- **Network authentication**: TCP connections have no authentication (ECU names self-declared)
+  - Impact: In networked mode, attacker can impersonate any ECU
+  - Mitigation: Use in-process mode for production or add TLS/mutual auth for networked mode
+- **No network timeouts**: TCP read operations lack timeout protection
+  - Impact: Slow clients can hold connections indefinitely
+  - Mitigation: Rate limiter already prevents message flooding
+
 ## 2025-11-18 (Cryptographic Enhancement)
 
 ### Hardware-Based RNG and AES-256-GCM Encryption

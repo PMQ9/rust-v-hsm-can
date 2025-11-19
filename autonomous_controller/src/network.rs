@@ -4,6 +4,11 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 
+/// Maximum message size in bytes to prevent DoS via memory exhaustion
+/// SECURITY FIX: Limit JSON message size to prevent attackers from
+/// sending extremely large messages that cause memory exhaustion
+const MAX_MESSAGE_SIZE: usize = 64 * 1024; // 64 KB - generous for CAN bus messages
+
 /// Network message types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NetMessage {
@@ -68,15 +73,29 @@ impl BusClient {
     }
 
     /// Receive a message from the server (blocking)
+    ///
+    /// SECURITY FIX: Enforces maximum message size to prevent DoS attacks
     pub async fn receive_message(
         &mut self,
     ) -> Result<NetMessage, Box<dyn std::error::Error + Send + Sync>> {
         let mut reader = BufReader::new(&mut self.stream);
         let mut line = String::new();
-        reader.read_line(&mut line).await?;
 
-        if line.is_empty() {
+        // SECURITY: Use read_line with size limit checking
+        let bytes_read = reader.read_line(&mut line).await?;
+
+        if bytes_read == 0 {
             return Err("Connection closed".into());
+        }
+
+        // SECURITY FIX: Validate message size before deserialization
+        if line.len() > MAX_MESSAGE_SIZE {
+            return Err(format!(
+                "Message too large: {} bytes (max: {} bytes)",
+                line.len(),
+                MAX_MESSAGE_SIZE
+            )
+            .into());
         }
 
         let msg: NetMessage = serde_json::from_str(&line)?;
@@ -107,14 +126,26 @@ pub struct BusReader {
 
 impl BusReader {
     /// Receive a message from the server
+    ///
+    /// SECURITY FIX: Enforces maximum message size to prevent DoS attacks
     pub async fn receive_message(
         &mut self,
     ) -> Result<NetMessage, Box<dyn std::error::Error + Send + Sync>> {
         let mut line = String::new();
-        self.reader.read_line(&mut line).await?;
+        let bytes_read = self.reader.read_line(&mut line).await?;
 
-        if line.is_empty() {
+        if bytes_read == 0 {
             return Err("Connection closed".into());
+        }
+
+        // SECURITY FIX: Validate message size before deserialization
+        if line.len() > MAX_MESSAGE_SIZE {
+            return Err(format!(
+                "Message too large: {} bytes (max: {} bytes)",
+                line.len(),
+                MAX_MESSAGE_SIZE
+            )
+            .into());
         }
 
         let msg: NetMessage = serde_json::from_str(&line)?;

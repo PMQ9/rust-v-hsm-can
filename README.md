@@ -318,6 +318,6 @@ See [tests/README.md](tests/README.md) for details.
 - [x] ISO 21434 audit reporting
 
 **To Do**
-- [ ] Hardware based RNG (Linux, ARM, Windows)
+- [x] Hardware based RNG (Linux, ARM, Windows)
 - [ ] ~~CAN Message readable~~ This is readable by design, since this project is meant to experimenting, we need to see the raw data
-- [ ] Replace XOR-based Encryption with AES-256-GCM
+- [x] Replace XOR-based Encryption with AES-256-GCM

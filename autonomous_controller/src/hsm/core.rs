@@ -295,9 +295,40 @@ impl VirtualHSM {
         self.session_counter
     }
 
-    /// Increment session counter
+    /// Increment session counter with wraparound protection
+    ///
+    /// SECURITY FIX: Detects counter wraparound and triggers key rotation
+    /// before reaching u64::MAX to maintain replay protection security
     pub fn increment_session(&mut self) {
-        self.session_counter = self.session_counter.wrapping_add(1);
+        // SECURITY: Check for imminent counter wraparound (when approaching u64::MAX)
+        // Trigger key rotation at 2^63 (half of u64::MAX) to ensure fresh counter
+        const COUNTER_ROTATION_THRESHOLD: u64 = u64::MAX / 2;
+
+        if self.session_counter >= COUNTER_ROTATION_THRESHOLD {
+            // Counter approaching wraparound - force key rotation if enabled
+            if self.is_key_rotation_enabled() {
+                println!(
+                    "{} Session counter approaching limit ({}), triggering key rotation",
+                    "⚠️".yellow(),
+                    self.session_counter
+                );
+                let _ = self.rotate_key();
+                // Reset counter after rotation to maintain replay protection
+                self.session_counter = 0;
+            } else {
+                // Key rotation not enabled - use wrapping_add as fallback
+                // WARNING: This breaks replay protection after wraparound
+                println!(
+                    "{} {}",
+                    "⚠️".yellow(),
+                    "Session counter wraparound detected! Enable key rotation to prevent replay vulnerabilities.".red()
+                );
+                self.session_counter = self.session_counter.wrapping_add(1);
+            }
+        } else {
+            // Normal increment
+            self.session_counter = self.session_counter.wrapping_add(1);
+        }
     }
 
     // ========================================================================
