@@ -2,6 +2,38 @@
 
 ## 2025-11-19
 
+### Security Audit Remediation - HIGH/MEDIUM Priority Fixes
+
+**Fixed Issues:**
+
+1. **[HIGH] H-1: Timing Side-Channel in MAC Verification**
+   - **Risk:** ECU name lookup timing could leak information about registered ECUs
+   - **Fix:** Implemented constant-time ECU name lookup using SHA256 hashing
+   - **Implementation:** Hash ECU names to fixed-size identifiers before HashMap lookup
+   - **Files:** `autonomous_controller/src/hsm/core.rs` (lines 14-24, 53, 280-281, 387-390, 825-826)
+   - **Impact:** Eliminates timing-based information disclosure vulnerability
+
+2. **[MEDIUM] M-1: Session Counter Wraparound Security Degradation**
+   - **Risk:** Replay protection fails if counter wraps without key rotation
+   - **Fix:** Enforce mandatory key rotation in production builds
+   - **Implementation:** Production builds panic at counter threshold if rotation disabled; test builds allow wraparound for testing
+   - **Files:** `autonomous_controller/src/hsm/core.rs` (lines 334-368)
+   - **Impact:** Prevents replay protection failure in long-running systems
+
+3. **[MEDIUM] M-2: Network Authentication Weakness**
+   - **Risk:** TCP connections lack authentication (mitigated by MAC verification)
+   - **Fix:** Comprehensive documentation of network security model
+   - **Implementation:** Added security warnings to network module and CLAUDE.md
+   - **Files:** `autonomous_controller/src/network.rs` (lines 1-29), `CLAUDE.md` (lines 131-158)
+   - **Impact:** Clear understanding of security boundaries and production recommendations
+
+4. **[MEDIUM] M-3: Anomaly Training Mode Security**
+   - **Risk:** Attacker could retrain baseline to accept malicious traffic
+   - **Fix:** Added `allow_training` compile-time feature flag
+   - **Implementation:** Training methods disabled in production builds, only available with `--features allow_training`
+   - **Files:** `autonomous_controller/src/hsm/core.rs` (lines 644-757), `autonomous_controller/Cargo.toml` (lines 7-15, 127-130)
+   - **Impact:** Prevents baseline retraining attacks in deployed systems
+
 ### Security Audit Completion
 Fixed 3 medium/low severity issues.
 

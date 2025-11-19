@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use colored::*;
 use rand::rngs::{OsRng, StdRng};
 use rand::{Rng, RngCore, SeedableRng};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -9,6 +10,18 @@ use super::crypto;
 use super::errors::{MacFailureReason, ReplayError};
 use super::performance::{PerformanceMetrics, PerformanceSnapshot};
 use super::replay::{ReplayProtectionConfig, ReplayProtectionState};
+
+/// Fixed-size ECU identifier (SHA256 hash of ECU name)
+/// SECURITY: Prevents timing side-channels in ECU name lookup
+type EcuId = [u8; 32];
+
+/// Hash ECU name to fixed-size identifier for constant-time lookup
+/// SECURITY FIX: Mitigates timing side-channel in MAC verification (H-1)
+fn hash_ecu_name(ecu_name: &str) -> EcuId {
+    let mut hasher = Sha256::new();
+    hasher.update(ecu_name.as_bytes());
+    hasher.finalize().into()
+}
 
 /// Virtual Hardware Security Module
 /// Provides cryptographic key management and operations for secure CAN communication
@@ -36,7 +49,8 @@ pub struct VirtualHSM {
     seed_key_access: [u8; 32],
 
     /// MAC verification keys for each ECU this HSM trusts
-    mac_verification_keys: HashMap<String, [u8; 32]>,
+    /// SECURITY: Uses hashed ECU IDs for constant-time lookup (prevents timing attacks)
+    mac_verification_keys: HashMap<EcuId, [u8; 32]>,
 
     /// Session key counter for anti-replay protection
     session_counter: u64,
@@ -261,8 +275,10 @@ impl VirtualHSM {
     // ========================================================================
 
     /// Add a trusted ECU's MAC verification key
+    /// SECURITY: Hashes ECU name for constant-time lookup
     pub fn add_trusted_ecu(&mut self, ecu_name: String, mac_key: [u8; 32]) {
-        self.mac_verification_keys.insert(ecu_name, mac_key);
+        let ecu_id = hash_ecu_name(&ecu_name);
+        self.mac_verification_keys.insert(ecu_id, mac_key);
     }
 
     /// Get symmetric communication key for this ECU
@@ -272,9 +288,11 @@ impl VirtualHSM {
 
     /// Get MAC verification key for a specific ECU (internal use, legacy)
     /// Note: Prefer using get_verification_key_by_version() for key rotation support
+    /// SECURITY: Uses hashed ECU ID for constant-time lookup
     #[allow(dead_code)]
     pub(super) fn get_mac_verification_key(&self, ecu_name: &str) -> Option<&[u8; 32]> {
-        self.mac_verification_keys.get(ecu_name)
+        let ecu_id = hash_ecu_name(ecu_name);
+        self.mac_verification_keys.get(&ecu_id)
     }
 
     /// Verify seed/key access authorization
@@ -325,14 +343,28 @@ impl VirtualHSM {
                 // Reset counter after rotation to maintain replay protection
                 self.session_counter = 0;
             } else {
-                // Key rotation not enabled - use wrapping_add as fallback
-                // WARNING: This breaks replay protection after wraparound
-                println!(
-                    "{} {}",
-                    "⚠️".yellow(),
-                    "Session counter wraparound detected! Enable key rotation to prevent replay vulnerabilities.".red()
-                );
-                self.session_counter = self.session_counter.wrapping_add(1);
+                // SECURITY FIX (M-1): Key rotation not enabled at threshold
+                // In production builds, panic to prevent replay protection degradation
+                // In test builds, allow wraparound for testing edge cases
+                #[cfg(not(test))]
+                {
+                    panic!(
+                        "CRITICAL SECURITY ERROR: Session counter limit reached ({}) but key rotation is disabled. \
+                        Enable key rotation to prevent replay protection failure. This is a security requirement.",
+                        self.session_counter
+                    );
+                }
+
+                #[cfg(test)]
+                {
+                    // Only allow wraparound in test builds for edge case testing
+                    println!(
+                        "{} {}",
+                        "⚠️".yellow(),
+                        "TEST MODE: Session counter wraparound detected! Enable key rotation in production.".red()
+                    );
+                    self.session_counter = self.session_counter.wrapping_add(1);
+                }
             }
         } else {
             // Normal increment
@@ -365,9 +397,11 @@ impl VirtualHSM {
         source_ecu: &str,
     ) -> Result<(), MacFailureReason> {
         // Get the MAC key for the source ECU
+        // SECURITY: Hash ECU name for constant-time lookup
+        let ecu_id = hash_ecu_name(source_ecu);
         let key = self
             .mac_verification_keys
-            .get(source_ecu)
+            .get(&ecu_id)
             .ok_or(MacFailureReason::NoKeyRegistered)?;
 
         crypto::verify_mac(
@@ -608,6 +642,20 @@ impl VirtualHSM {
     }
 
     /// Start anomaly detection training mode
+    ///
+    /// **SECURITY WARNING (M-3):** Training mode should NEVER be enabled in production.
+    /// This method is protected by the `allow_training` feature flag to prevent
+    /// accidental or malicious activation in deployed systems.
+    ///
+    /// ## Security Risk
+    /// If training mode is activated in production, an attacker could inject malicious
+    /// traffic during training, causing the system to learn attack patterns as "normal".
+    ///
+    /// ## Usage
+    /// Only enable this in secure factory/lab environments during baseline calibration.
+    ///
+    /// Build with: `cargo build --features allow_training`
+    #[cfg(feature = "allow_training")]
     pub fn start_anomaly_training(&mut self, min_samples_per_can_id: u64) -> Result<(), String> {
         let mut detector = crate::anomaly_detection::AnomalyDetector::new();
         detector.start_training(self.ecu_id.clone(), min_samples_per_can_id)?;
@@ -615,19 +663,42 @@ impl VirtualHSM {
         self.anomaly_detector = Some(detector);
 
         println!(
-            "{} Anomaly detection training started for {}",
-            "→".cyan(),
+            "{} {} Anomaly detection training started for {}",
+            "⚠️".yellow(),
+            "TRAINING MODE".yellow().bold(),
             self.ecu_id.bright_white()
         );
         println!(
             "   • Minimum samples per CAN ID: {}",
             min_samples_per_can_id.to_string().bright_white()
         );
+        println!(
+            "   • {} {}",
+            "WARNING:".red().bold(),
+            "Training mode should ONLY be used in secure factory/lab environments".yellow()
+        );
 
         Ok(())
     }
 
+    /// Start anomaly detection training mode (DISABLED in production builds)
+    ///
+    /// This method is only available when built with the `allow_training` feature flag.
+    /// In production builds, calling this method returns an error.
+    #[cfg(not(feature = "allow_training"))]
+    pub fn start_anomaly_training(&mut self, _min_samples_per_can_id: u64) -> Result<(), String> {
+        Err(
+            "SECURITY ERROR: Anomaly training is disabled in production builds. \
+            This is a security feature to prevent baseline retraining attacks. \
+            Build with --features allow_training if you need training mode (factory/lab only)."
+                .to_string(),
+        )
+    }
+
     /// Train anomaly detector with a frame (only in training mode)
+    ///
+    /// **SECURITY:** Protected by `allow_training` feature flag
+    #[cfg(feature = "allow_training")]
     pub fn train_anomaly_detector(
         &mut self,
         frame: &super::secured_frame::SecuredCanFrame,
@@ -638,7 +709,19 @@ impl VirtualHSM {
         Ok(())
     }
 
+    /// Train anomaly detector (DISABLED in production builds)
+    #[cfg(not(feature = "allow_training"))]
+    pub fn train_anomaly_detector(
+        &mut self,
+        _frame: &super::secured_frame::SecuredCanFrame,
+    ) -> Result<(), String> {
+        Err("Anomaly training disabled in production builds".to_string())
+    }
+
     /// Finalize anomaly training and get baseline for saving
+    ///
+    /// **SECURITY:** Protected by `allow_training` feature flag
+    #[cfg(feature = "allow_training")]
     pub fn finalize_anomaly_training(
         &mut self,
     ) -> Result<crate::anomaly_detection::AnomalyBaseline, String> {
@@ -663,6 +746,14 @@ impl VirtualHSM {
         );
 
         Ok(baseline)
+    }
+
+    /// Finalize anomaly training (DISABLED in production builds)
+    #[cfg(not(feature = "allow_training"))]
+    pub fn finalize_anomaly_training(
+        &mut self,
+    ) -> Result<crate::anomaly_detection::AnomalyBaseline, String> {
+        Err("Anomaly training disabled in production builds".to_string())
     }
 
     /// Activate anomaly detection with finalized baseline
@@ -794,6 +885,7 @@ impl VirtualHSM {
     }
 
     /// Get verification key by version (for RX - supports old keys in grace period)
+    /// SECURITY: Uses hashed ECU ID for constant-time lookup
     pub fn get_verification_key_by_version(
         &self,
         source_ecu: &str,
@@ -801,7 +893,8 @@ impl VirtualHSM {
     ) -> Option<[u8; 32]> {
         // If key_version is 0, use legacy verification keys
         if key_version == 0 {
-            return self.mac_verification_keys.get(source_ecu).copied();
+            let ecu_id = hash_ecu_name(source_ecu);
+            return self.mac_verification_keys.get(&ecu_id).copied();
         }
 
         // Otherwise, look up session key from rotation manager
