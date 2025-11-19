@@ -2,6 +2,31 @@
 
 ## 2025-11-19
 
+### Comprehensive Cybersecurity Documentation Suite
+
+**Added:**
+- Created professional cybersecurity documentation suite in `doc/` folder with full traceability to code
+- **00_CYBERSECURITY_OVERVIEW.md**: Executive summary, system architecture, security features overview, ISO 21434 compliance statement, threat model, and traceability matrix
+- **01_ISO21434_COMPLIANCE.md**: Detailed ISO 21434:2021 compliance mapping with clause-by-clause verification, control implementation evidence, TARA summary, gap analysis, and production recommendations
+- **03_CORE_SECURITY_MECHANISMS.md**: Technical deep-dive into MAC/HMAC authentication, CRC32 integrity, replay protection, attack detection, access control, key rotation, and SecuredCanFrame format with exact code references
+- **04_ANOMALY_IDS.md**: Complete anomaly detection system documentation covering training phase, detection phase, graduated response levels (80%/99% thresholds), baseline persistence, and operational guidance
+
+**Documentation Highlights:**
+- Full traceability: Every security requirement mapped to exact code line numbers
+- 10 major security features documented with implementation details and test coverage
+- Threat model with 10 TARA scenarios (CVSS-scored) and mitigation effectiveness
+- Complete compliance evidence for ISO 21434 CAL-2.1 through CAL-10.1
+- Attack detection thresholds documented with rationale (CRC=5, MAC=3, Unsecured=1, Replay=1)
+- 159+ test coverage breakdown by category
+- Production deployment best practices and gap analysis
+
+**Security Requirements Coverage:**
+- SEC-REQ-001 through SEC-REQ-010 fully documented with implementation and test references
+- Traceability matrix linking ISO 21434 clauses to code and tests
+- Graduated response levels for anomaly detection (1.3σ warning, 3.0σ attack)
+- Key rotation lifecycle with HKDF-SHA256 derivation
+- Attack scenarios and mitigations for each threat type
+
 ### CI/CD Fixes and Code Quality Improvements
 
 **Fixed Issues:**
