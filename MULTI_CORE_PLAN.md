@@ -19,16 +19,16 @@
 - [x] Verify build and format/lint - ✓ DONE
 - [ ] Verify core pinning with htop - PENDING (can test when running)
 
-### Phase 3: ECU Migration
-- [ ] Migrate wheel_fl.rs to HsmClient
-- [ ] Migrate wheel_fr.rs to HsmClient
-- [ ] Migrate wheel_rl.rs to HsmClient
-- [ ] Migrate wheel_rr.rs to HsmClient
-- [ ] Migrate engine_ecu.rs to HsmClient
-- [ ] Migrate steering_sensor.rs to HsmClient
-- [ ] Migrate autonomous_controller.rs to HsmClient
-- [ ] Migrate brake_controller.rs to HsmClient
-- [ ] Migrate steering_controller.rs to HsmClient
+### Phase 3: ECU Migration - COMPLETE
+- [x] Migrate wheel_fl.rs to HsmClient - ✓ DONE
+- [x] Migrate wheel_fr.rs to HsmClient - ✓ DONE
+- [x] Migrate wheel_rl.rs to HsmClient - ✓ DONE
+- [x] Migrate wheel_rr.rs to HsmClient - ✓ DONE
+- [x] Migrate engine_ecu.rs to HsmClient - ✓ DONE
+- [x] Migrate steering_sensor.rs to HsmClient - ✓ DONE
+- [x] Migrate autonomous_controller.rs to HsmClient - ✓ DONE
+- [x] Migrate brake_controller.rs to HsmClient - ✓ DONE
+- [x] Migrate steering_controller.rs to HsmClient - ✓ DONE
 
 ### Phase 4: Testing & Validation
 - [ ] Run full CI test suite (159+ tests)
@@ -36,10 +36,12 @@
 - [ ] Update CHANGELOG.md
 
 ### Blockers / Notes
-- **Phase 1 & 2 Status**: COMPLETE. All new modules compile and tests pass.
+- **Phase 1, 2, & 3 Status**: COMPLETE. All ECUs migrated to HsmClient.
 - **Known issue**: Pre-existing flaky test `rate_limiter::tests::test_very_high_refill_rate` (unrelated to multi-core changes)
 - **New test counts**: 18 new unit tests added (8 for core_affinity_config, 10 for hsm_service)
-- **Next steps**: Begin Phase 3 - ECU migration to HsmClient
+- **Migration stats**: 10 files changed, 557 insertions(+), 578 deletions(-)
+- **Build status**: Release build successful (2m 31s)
+- **Next steps**: Phase 4 - Testing & validation
 
 ---
 

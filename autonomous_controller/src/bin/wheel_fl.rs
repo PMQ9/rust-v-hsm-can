@@ -1,5 +1,7 @@
 use autonomous_vehicle_sim::access_control;
-use autonomous_vehicle_sim::hsm::{SecuredCanFrame, SignedFirmware, VirtualHSM};
+use autonomous_vehicle_sim::core_affinity_config::pin_by_component;
+use autonomous_vehicle_sim::hsm::{SignedFirmware, VirtualHSM};
+use autonomous_vehicle_sim::hsm_service::HsmClient;
 use autonomous_vehicle_sim::network::BusClient;
 use autonomous_vehicle_sim::protected_memory::ProtectedMemory;
 use autonomous_vehicle_sim::types::{can_ids, encoding};
@@ -9,13 +11,19 @@ use std::time::Duration;
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
 const ECU_NAME: &str = "WHEEL_FL";
 const UPDATE_INTERVAL_MS: u64 = 100; // 10 Hz
-const HSM_SEED: u64 = 0x1001; // Unique seed for this ECU
+const HSM_SOCKET_PATH: &str = "/tmp/vsm_hsm_service.sock";
+const HSM_SEED: u64 = 0x1001; // Unique seed for boot-time HSM
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Parse command-line arguments
     let args: Vec<String> = std::env::args().collect();
     let perf_mode = args.contains(&"--perf".to_string());
+
+    // Pin to assigned core (Core 1 for sensors)
+    if let Err(e) = pin_by_component(ECU_NAME.to_lowercase().as_str()) {
+        eprintln!("{} Core pinning failed: {} (continuing)", "→".yellow(), e);
+    }
 
     println!(
         "{}",
@@ -34,14 +42,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
     println!();
 
-    // Initialize HSM with optional performance tracking
-    println!("{} Initializing Virtual HSM...", "→".cyan());
-    let mut hsm = VirtualHSM::with_performance(ECU_NAME.to_string(), HSM_SEED, perf_mode);
+    // =========================================================================
+    // Boot-time security (local HSM for secure boot)
+    // =========================================================================
+    println!("{} Performing secure boot sequence...", "→".cyan());
+
+    // Use local HSM for boot-time operations (firmware signing, secure boot)
+    let boot_hsm = VirtualHSM::new(ECU_NAME.to_string(), HSM_SEED);
+
+    // Initialize protected memory
+    let mut protected_mem = ProtectedMemory::new(ECU_NAME.to_string());
+
+    // Create and provision firmware
+    let firmware_code = b"WHEEL_FL_FIRMWARE_v1.0.0";
+    let firmware = SignedFirmware::new(
+        firmware_code.to_vec(),
+        "1.0.0".to_string(),
+        ECU_NAME.to_string(),
+        &boot_hsm,
+    );
+
+    protected_mem
+        .provision_firmware(firmware, &boot_hsm)
+        .expect("Failed to provision firmware");
+
+    // Perform secure boot
+    protected_mem
+        .secure_boot(&boot_hsm)
+        .expect("Secure boot failed");
+    println!("{} Secure boot completed", "✓".green().bold());
+
+    // =========================================================================
+    // Runtime security (HsmClient for CAN operations)
+    // =========================================================================
+    println!("{} Connecting to HSM service...", "→".cyan());
+
+    // Connect to centralized HSM service on Core 3
+    let hsm_client = HsmClient::connect(ECU_NAME.to_string(), HSM_SOCKET_PATH).await?;
+    println!(
+        "{} Connected to HSM service ({})",
+        "✓".green().bold(),
+        HSM_SOCKET_PATH
+    );
 
     // Load CAN ID access control policy
     println!("{} Loading CAN ID access control policy...", "→".cyan());
     if let Some(permissions) = access_control::load_policy_for_ecu(ECU_NAME) {
-        hsm.load_access_control(permissions);
+        hsm_client.load_access_control(permissions).await?;
         println!("{} Access control policy loaded", "✓".green().bold());
     } else {
         println!(
@@ -51,27 +98,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
     println!();
 
-    // Initialize protected memory
-    println!("{} Initializing protected memory...", "→".cyan());
-    let mut protected_mem = ProtectedMemory::new(ECU_NAME.to_string());
-
-    // Create and provision firmware
-    let firmware_code = b"WHEEL_FL_FIRMWARE_v1.0.0";
-    let firmware = SignedFirmware::new(
-        firmware_code.to_vec(),
-        "1.0.0".to_string(),
-        ECU_NAME.to_string(),
-        &hsm,
-    );
-
-    protected_mem
-        .provision_firmware(firmware, &hsm)
-        .expect("Failed to provision firmware");
-
-    // Perform secure boot
-    println!("{} Performing secure boot...", "→".cyan());
-    protected_mem.secure_boot(&hsm).expect("Secure boot failed");
-
+    // =========================================================================
+    // CAN bus connection
+    // =========================================================================
     println!("{} Connecting to CAN bus at {}...", "→".cyan(), BUS_ADDRESS);
     let client = BusClient::connect(BUS_ADDRESS, ECU_NAME.to_string()).await?;
     println!("{} Connected to CAN bus!", "✓".green().bold());
@@ -89,14 +118,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut direction = 1.0f32;
     let mut counter = 0u32;
 
-    // Setup Ctrl+C handler for clean shutdown with performance stats
-    let hsm_clone = hsm.clone();
+    // Setup Ctrl+C handler for clean shutdown
     tokio::spawn(async move {
         tokio::signal::ctrl_c()
             .await
             .expect("Failed to listen for Ctrl+C");
         println!("\n{} Shutting down...", "→".yellow());
-        hsm_clone.print_performance_stats();
         std::process::exit(0);
     });
 
@@ -115,14 +142,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let noise = (counter as f32 * 0.1).sin() * 0.5;
         let actual_speed = (speed + noise).max(0.0);
 
-        // Encode and send with HSM security
+        // Encode and send with HSM security (via HSM service)
         let data = encoding::encode_wheel_speed(actual_speed);
-        match SecuredCanFrame::new(
-            can_ids::WHEEL_SPEED_FL,
-            data.to_vec(),
-            ECU_NAME.to_string(),
-            &mut hsm,
-        ) {
+        match hsm_client
+            .create_secured_frame(can_ids::WHEEL_SPEED_FL, data.to_vec())
+            .await
+        {
             Ok(secured_frame) => {
                 writer.send_secured_frame(secured_frame).await?;
             }
@@ -139,15 +164,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 "→".bright_black(),
                 actual_speed
             );
-        }
-
-        // Periodically send performance stats to monitor (if enabled)
-        if perf_mode
-            && counter.is_multiple_of(100)
-            && counter > 0
-            && let Some(snapshot) = hsm.get_performance_snapshot()
-        {
-            let _ = writer.send_performance_stats(snapshot).await;
         }
 
         counter += 1;

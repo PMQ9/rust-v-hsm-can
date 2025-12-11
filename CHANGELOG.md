@@ -1,5 +1,30 @@
 # Changelog
 
+## 2025-12-11
+
+### Multi-Core HSM Architecture - ECU Migration Complete
+
+**Changed:**
+- Migrated remaining 5 ECUs to use centralized HsmClient for runtime HSM operations
+- `engine_ecu.rs` (Core 1 sensor): Now uses HsmClient for CAN frame creation
+- `steering_sensor.rs` (Core 1 sensor): Now uses HsmClient for CAN frame creation
+- `autonomous_controller.rs` (Core 2 controller): Uses HsmClient for TX/RX operations
+- `brake_controller.rs` (Core 2 actuator): Uses HsmClient for RX verification
+- `steering_controller.rs` (Core 2 actuator): Uses HsmClient for RX verification
+- All 9 ECUs now follow unified boot/runtime pattern: local VirtualHSM for secure boot, HsmClient for CAN operations
+
+**Implementation Pattern (All ECUs):**
+- Boot-time: Local VirtualHSM for firmware signing/verification
+- Runtime: HsmClient connects to centralized HSM service on Core 3
+- Core pinning: pin_by_component() assigns ECUs to appropriate cores
+- Simplified: Removed local anomaly baseline loading, performance stats handling
+
+**Architecture Benefits:**
+- All ECUs delegate cryptographic operations to single HSM service on Core 3
+- Consistent security enforcement across all components
+- Centralized key management and access control
+- Cleaner separation of concerns (boot security vs runtime security)
+
 ## 2025-11-19
 
 ### Comprehensive Cybersecurity Documentation Suite

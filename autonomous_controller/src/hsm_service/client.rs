@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 
 use crate::anomaly_detection::{AnomalyBaseline, AnomalyResult};
 use crate::hsm::{SecuredCanFrame, VerifyError};
-use crate::types::CanIdPermissions;
+use crate::types::{CanId, CanIdPermissions};
 
 use super::protocol::{HsmRequest, HsmResponse, MAX_MESSAGE_SIZE};
 
@@ -392,6 +392,87 @@ impl HsmClient {
     /// Get socket path
     pub fn socket_path(&self) -> &str {
         &self.socket_path
+    }
+
+    // ========================================================================
+    // Secured Frame Creation (async version of SecuredCanFrame::new)
+    // ========================================================================
+
+    /// Create a secured CAN frame using the HSM service
+    ///
+    /// This is the async equivalent of `SecuredCanFrame::new()` for use with HsmClient.
+    /// It performs all security operations through the centralized HSM service.
+    ///
+    /// # Arguments
+    /// * `can_id` - CAN identifier for the frame
+    /// * `data` - Payload data (0-8 bytes for CAN)
+    ///
+    /// # Returns
+    /// * `Ok(SecuredCanFrame)` - Secured frame ready for transmission
+    /// * `Err(String)` - Error message if authorization or security operation fails
+    pub async fn create_secured_frame(
+        &self,
+        can_id: CanId,
+        data: Vec<u8>,
+    ) -> Result<SecuredCanFrame, String> {
+        // Validate CAN frame data length (CAN 2.0 spec: max 8 bytes)
+        if data.len() > 8 {
+            return Err(format!(
+                "CAN frame data too long: {} bytes (max 8)",
+                data.len()
+            ));
+        }
+
+        // Check authorization before creating frame
+        self.authorize_transmit(can_id.value())
+            .await
+            .map_err(|e| format!("Authorization failed: {}", e))?;
+
+        // Get session counter from HSM service
+        let session_counter = self
+            .get_session_counter()
+            .await
+            .map_err(|e| format!("Failed to get session counter: {}", e))?;
+
+        // Increment session counter for next frame
+        self.increment_session()
+            .await
+            .map_err(|e| format!("Failed to increment session: {}", e))?;
+
+        // Build data for MAC and CRC calculation
+        let mut verify_data = Vec::new();
+        verify_data.extend_from_slice(&can_id.value().to_le_bytes());
+        verify_data.extend_from_slice(&data);
+        verify_data.extend_from_slice(self.ecu_id.as_bytes());
+
+        // Calculate CRC via HSM service
+        let crc = self
+            .calculate_crc(&verify_data)
+            .await
+            .map_err(|e| format!("Failed to calculate CRC: {}", e))?;
+
+        // Generate MAC via HSM service
+        let mac = self
+            .generate_mac(&verify_data, session_counter)
+            .await
+            .map_err(|e| format!("Failed to generate MAC: {}", e))?;
+
+        // Get current key version
+        let key_version = self
+            .get_current_key_version()
+            .await
+            .map_err(|e| format!("Failed to get key version: {}", e))?;
+
+        Ok(SecuredCanFrame {
+            can_id,
+            data,
+            source: self.ecu_id.clone(),
+            timestamp: chrono::Utc::now(),
+            mac,
+            crc,
+            session_counter,
+            key_version,
+        })
     }
 }
 
