@@ -140,10 +140,7 @@ impl HsmClient {
     ///
     /// # Returns
     /// Ok(()) if frame is valid, Err(VerifyError) otherwise
-    pub async fn verify_frame(
-        &self,
-        frame: &SecuredCanFrame,
-    ) -> Result<(), VerifyError> {
+    pub async fn verify_frame(&self, frame: &SecuredCanFrame) -> Result<(), VerifyError> {
         let request = HsmRequest::VerifyFrame {
             ecu_id: self.ecu_id.clone(),
             frame: frame.clone(),
@@ -205,9 +202,7 @@ impl HsmClient {
     }
 
     /// Increment session counter (for replay protection)
-    pub async fn increment_session(
-        &self,
-    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn increment_session(&self) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
         let request = HsmRequest::IncrementSession {
             ecu_id: self.ecu_id.clone(),
         };
@@ -257,10 +252,7 @@ impl HsmClient {
     }
 
     /// Detect anomaly in frame (after MAC/CRC verification)
-    pub async fn detect_anomaly(
-        &self,
-        frame: &SecuredCanFrame,
-    ) -> AnomalyResult {
+    pub async fn detect_anomaly(&self, frame: &SecuredCanFrame) -> AnomalyResult {
         let request = HsmRequest::DetectAnomaly {
             ecu_id: self.ecu_id.clone(),
             frame: frame.clone(),

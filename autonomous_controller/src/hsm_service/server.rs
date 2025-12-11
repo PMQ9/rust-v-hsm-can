@@ -10,8 +10,8 @@ use tokio::sync::Mutex;
 
 use colored::*;
 
-use crate::hsm::VirtualHSM;
 use super::protocol::{HsmRequest, HsmResponse, MAX_MESSAGE_SIZE};
+use crate::hsm::VirtualHSM;
 
 /// HSM Service Server running on dedicated Core 3
 /// Maintains per-ECU HSM instances and processes crypto requests
@@ -44,9 +44,18 @@ impl HsmServiceServer {
             std::fs::remove_file(socket_path_obj)?;
         }
 
-        println!("{}", "═══════════════════════════════════════".cyan().bold());
-        println!("{}", "        HSM SERVICE (Core 3)           ".cyan().bold());
-        println!("{}", "═══════════════════════════════════════".cyan().bold());
+        println!(
+            "{}",
+            "═══════════════════════════════════════".cyan().bold()
+        );
+        println!(
+            "{}",
+            "        HSM SERVICE (Core 3)           ".cyan().bold()
+        );
+        println!(
+            "{}",
+            "═══════════════════════════════════════".cyan().bold()
+        );
         println!("{} Socket: {}", "→".cyan(), self.socket_path.bright_white());
         println!("{} Performance mode: {}", "→".cyan(), self.perf_mode);
         println!();
@@ -177,8 +186,8 @@ impl HsmServiceServer {
             }
 
             CalculateCrc { ecu_id: _, data } => {
-                use crate::hsm::crypto;
-                let crc = crypto::calculate_crc(&data);
+                // Direct CRC32 calculation (same algorithm as hsm/crypto.rs)
+                let crc = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC).checksum(&data);
                 Resp::CrcCalculated { crc }
             }
 
@@ -187,8 +196,9 @@ impl HsmServiceServer {
                 data,
                 expected_crc,
             } => {
-                use crate::hsm::crypto;
-                let valid = crypto::verify_crc(&data, expected_crc);
+                // Direct CRC32 verification
+                let calculated = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC).checksum(&data);
+                let valid = calculated == expected_crc;
                 Resp::CrcVerified { valid }
             }
 
@@ -273,8 +283,9 @@ impl HsmServiceServer {
             } => {
                 let mut map = hsm_map.lock().await;
                 let hsm = Self::get_or_create_hsm(&ecu_id, &mut map, perf_mode);
-                match hsm.get_verification_key(&trusted_ecu_name) {
-                    Some(key) => Resp::VerificationKey { key: *key },
+                // Use key_version=0 for legacy behavior (current key)
+                match hsm.get_verification_key_by_version(&trusted_ecu_name, 0) {
+                    Some(key) => Resp::VerificationKey { key },
                     None => Resp::Error {
                         message: format!("No verification key for {}", trusted_ecu_name),
                     },
@@ -284,7 +295,8 @@ impl HsmServiceServer {
             GenerateRandom { ecu_id, count } => {
                 let mut map = hsm_map.lock().await;
                 let hsm = Self::get_or_create_hsm(&ecu_id, &mut map, perf_mode);
-                let data = hsm.generate_random_bytes(count);
+                let mut data = vec![0u8; count];
+                hsm.generate_random_bytes(&mut data);
                 Resp::RandomGenerated { data }
             }
 
@@ -304,11 +316,11 @@ impl HsmServiceServer {
     }
 
     /// Get or lazily create HSM instance for ECU
-    fn get_or_create_hsm(
+    fn get_or_create_hsm<'a>(
         ecu_id: &str,
-        hsm_map: &mut HashMap<String, VirtualHSM>,
+        hsm_map: &'a mut HashMap<String, VirtualHSM>,
         perf_mode: bool,
-    ) -> &mut VirtualHSM {
+    ) -> &'a mut VirtualHSM {
         hsm_map.entry(ecu_id.to_string()).or_insert_with(|| {
             // Create new HSM instance with hardware RNG for production security
             // Seed is derived from ECU name hash for reproducibility

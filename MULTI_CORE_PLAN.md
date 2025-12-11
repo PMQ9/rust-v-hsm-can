@@ -2,20 +2,22 @@
 
 ## Progress Tracking
 
-### Phase 1: HSM Service Foundation
+### Phase 1: HSM Service Foundation - COMPLETE
 - [x] Create protocol module (protocol.rs) - ✓ DONE
 - [x] Create server module (server.rs) - ✓ DONE
 - [x] Create client library (client.rs) - ✓ DONE
 - [x] Create binary entry point (bin/hsm_service.rs) - ✓ DONE
 - [x] Create module exports (hsm_service/mod.rs) - ✓ DONE
-- [ ] Test standalone HSM service - BLOCKED: Need to update lib.rs first
+- [x] Update lib.rs exports - ✓ DONE
+- [x] Test standalone HSM service compiles - ✓ DONE (10 unit tests pass)
 
-### Phase 2: Core Affinity Integration
-- [ ] Create core affinity config module
-- [ ] Update Cargo.toml (add core_affinity, hsm_service binary)
-- [ ] Update lib.rs exports
-- [ ] Update main.rs launcher (HSM service + core pinning)
-- [ ] Verify core pinning with htop
+### Phase 2: Core Affinity Integration - COMPLETE
+- [x] Create core affinity config module (core_affinity_config.rs) - ✓ DONE (8 unit tests pass)
+- [x] Update Cargo.toml (add core_affinity, hsm_service binary) - ✓ DONE
+- [x] Update lib.rs exports - ✓ DONE
+- [x] Update main.rs launcher (HSM service + core pinning) - ✓ DONE
+- [x] Verify build and format/lint - ✓ DONE
+- [ ] Verify core pinning with htop - PENDING (can test when running)
 
 ### Phase 3: ECU Migration
 - [ ] Migrate wheel_fl.rs to HsmClient
@@ -34,9 +36,10 @@
 - [ ] Update CHANGELOG.md
 
 ### Blockers / Notes
-- **Phase 1 Status**: 5/6 tasks complete. Need to update lib.rs to export hsm_service module before testing.
-- **Current compilation error**: `unresolved import autonomous_vehicle_sim::hsm_service` - Expected, will fix in Phase 2 when updating lib.rs
-- **Next steps**: Update lib.rs, Cargo.toml, then create core affinity module
+- **Phase 1 & 2 Status**: COMPLETE. All new modules compile and tests pass.
+- **Known issue**: Pre-existing flaky test `rate_limiter::tests::test_very_high_refill_rate` (unrelated to multi-core changes)
+- **New test counts**: 18 new unit tests added (8 for core_affinity_config, 10 for hsm_service)
+- **Next steps**: Begin Phase 3 - ECU migration to HsmClient
 
 ---
 

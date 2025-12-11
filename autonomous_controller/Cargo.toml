@@ -30,6 +30,8 @@ aes-gcm = "0.10"  # AES-256-GCM authenticated encryption
 crc = "3.0"
 hkdf = "0.12"
 getrandom = "0.2"  # Hardware-based RNG (cross-platform)
+# Multi-core architecture
+core_affinity = "0.8"
 
 # Main launcher
 [[bin]]
@@ -44,6 +46,11 @@ path = "src/bin/bus_server.rs"
 [[bin]]
 name = "monitor"
 path = "src/bin/monitor.rs"
+
+# HSM Service (multi-core architecture - runs on Core 3)
+[[bin]]
+name = "hsm_service"
+path = "src/bin/hsm_service.rs"
 
 # Sensor ECUs
 [[bin]]

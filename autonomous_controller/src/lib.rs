@@ -4,10 +4,12 @@ pub mod attack_framework;
 pub mod baseline_persistence;
 pub mod can_bus;
 pub mod config_management;
+pub mod core_affinity_config;
 pub mod ecu;
 pub mod error_handling;
 pub mod firmware_rollback;
 pub mod hsm;
+pub mod hsm_service;
 pub mod incident_response;
 pub mod network;
 pub mod protected_memory;
@@ -57,3 +59,7 @@ pub use uds_diagnostics::{
     DiagnosticSession, NegativeResponseCode, SecurityAccessRequest, SecurityAccessResponse,
     SecurityLevel, UdsDiagnosticServer, UdsDiagnosticSession, UdsService,
 };
+
+// Multi-core architecture exports
+pub use core_affinity_config::{CoreAssignment, get_core_assignment, pin_to_core};
+pub use hsm_service::{HsmClient, HsmRequest, HsmResponse, HsmServiceServer};

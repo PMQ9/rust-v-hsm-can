@@ -219,7 +219,7 @@ impl VehicleState {
 }
 
 /// CAN ID access control permissions for an ECU (ISO 21434 authorization model)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CanIdPermissions {
     /// ECU identifier
     pub ecu_id: String,

@@ -185,6 +185,24 @@ impl SecuredCanFrame {
             source: self.source.clone(),
         }
     }
+
+    /// Create a test frame for unit tests (not for production use)
+    ///
+    /// This creates a frame with dummy values suitable for testing
+    /// serialization, protocol messages, etc.
+    #[cfg(test)]
+    pub fn new_test_frame() -> Self {
+        Self {
+            can_id: crate::types::CanId::Standard(0x100),
+            data: vec![1, 2, 3, 4],
+            source: "TEST_ECU".to_string(),
+            timestamp: chrono::Utc::now(),
+            mac: [0xAA; 32],
+            crc: 0x12345678,
+            session_counter: 1,
+            key_version: 0,
+        }
+    }
 }
 
 #[cfg(test)]
