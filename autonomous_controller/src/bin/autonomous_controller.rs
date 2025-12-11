@@ -12,7 +12,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
-const ECU_NAME: &str = "AUTONOMOUS_CTRL";
+const ECU_NAME: &str = "AUTONOMOUS_CONTROLLER";
 const CONTROL_INTERVAL_MS: u64 = 100; // 10 Hz control loop
 const HSM_SOCKET_PATH: &str = "/tmp/vsm_hsm_service.sock";
 const HSM_SEED: u64 = 0x2001; // Unique seed for boot-time HSM
