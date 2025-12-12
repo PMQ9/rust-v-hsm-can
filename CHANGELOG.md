@@ -2,6 +2,24 @@
 
 ## 2025-12-12
 
+### Documentation Update: Raspberry Pi 4 Hardware Deployment
+
+**Updated:**
+- All documentation now reflects hardware deployment on Raspberry Pi 4 Model B
+- README.md: Added Pi4 hardware platform details and multi-core architecture overview
+- autonomous_controller/README.md: Updated with hardware specs, multi-core diagrams, IPC architecture
+- CLAUDE.md: Updated project overview, build commands, and repository structure for Pi4 deployment
+- Clarified this is NOT a simulation but real hardware implementation
+- Added new screenshot: CAN bus monitor running on Pi4 hardware
+
+**Hardware Platform:**
+- CPU: 4x ARM Cortex-A72 @ 1.5GHz (ARMv8-A 64-bit)
+- Architecture: aarch64 (ARM64)
+- OS: Linux 6.12.34+rpt-rpi-v8
+- Multi-core architecture with CPU affinity pinning (Core 0-3)
+- Centralized HSM service on dedicated Core 3
+- Hardware-based RNG and AES-256-GCM encryption
+
 ### Hardware RNG Implementation for Raspberry Pi 4
 
 **Added:**
