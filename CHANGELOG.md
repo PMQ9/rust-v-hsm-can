@@ -2,6 +2,26 @@
 
 ## 2025-12-12
 
+### Hardware RNG Implementation for Raspberry Pi 4
+
+**Added:**
+- Direct hardware RNG access via /dev/hwrng on Raspberry Pi 4
+- HardwareRng module with buffered reading and graceful fallback chain
+- Auto-detection of hardware RNG on Linux systems
+- Configuration via environment variables (VHSM_ENABLE_HWRNG, VHSM_HWRNG_PATH)
+
+**Changed:**
+- VirtualHSM now uses HardwareRng instead of direct OsRng/StdRng
+- Key generation uses hardware TRNG when available, falls back to OsRng
+- AES-GCM nonce generation uses HSM's RNG for consistency
+- Maintains deterministic mode for testing (seed-based)
+
+**Technical Details:**
+- hardware_rng.rs: New module with buffered 4KB reads from /dev/hwrng
+- Fallback chain: Deterministic (seed) → Hardware (/dev/hwrng) → OsRng (/dev/urandom)
+- Zero new dependencies (uses existing rand crate)
+- 284/286 tests passing (2 pre-existing flaky tests)
+
 ### HSM Service Frame Verification Fix + ECU Naming Consistency
 
 **Fixed:**

@@ -8,6 +8,7 @@ mod crypto;
 pub mod core;
 pub mod errors;
 pub mod firmware;
+pub mod hardware_rng;
 pub mod key_rotation;
 pub mod performance;
 pub mod replay;
