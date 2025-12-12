@@ -1092,15 +1092,15 @@ mod tests {
         }
 
         // Create sender HSM and register trusted sender
-        let mut sender_hsm = VirtualHSM::new("AUTONOMOUS_CTRL".to_string(), 67890);
+        let mut sender_hsm = VirtualHSM::new("AUTONOMOUS_CONTROLLER".to_string(), 67890);
         let sender_mac_key = *sender_hsm.get_symmetric_key();
-        hsm.add_trusted_ecu("AUTONOMOUS_CTRL".to_string(), sender_mac_key);
+        hsm.add_trusted_ecu("AUTONOMOUS_CONTROLLER".to_string(), sender_mac_key);
 
         // Create secured frame from authorized sender on authorized CAN ID
         let frame = SecuredCanFrame::new(
             can_ids::BRAKE_COMMAND, // 0x300 - brake controller IS authorized to receive this
             vec![0x50, 0x00, 0x00, 0x00], // 50% brake pressure
-            "AUTONOMOUS_CTRL".to_string(),
+            "AUTONOMOUS_CONTROLLER".to_string(),
             &mut sender_hsm,
         )
         .expect("Failed to create frame");
@@ -1128,15 +1128,15 @@ mod tests {
         }
 
         // Create sender HSM and register trusted sender
-        let mut sender_hsm = VirtualHSM::new("AUTONOMOUS_CTRL".to_string(), 67890);
+        let mut sender_hsm = VirtualHSM::new("AUTONOMOUS_CONTROLLER".to_string(), 67890);
         let sender_mac_key = *sender_hsm.get_symmetric_key();
-        hsm.add_trusted_ecu("AUTONOMOUS_CTRL".to_string(), sender_mac_key);
+        hsm.add_trusted_ecu("AUTONOMOUS_CONTROLLER".to_string(), sender_mac_key);
 
         // Create secured frame on UNAUTHORIZED CAN ID for brake controller
         let frame = SecuredCanFrame::new(
             can_ids::STEERING_COMMAND, // 0x302 - brake controller NOT authorized to receive this!
             vec![0x10, 0x00, 0x00, 0x00],
-            "AUTONOMOUS_CTRL".to_string(),
+            "AUTONOMOUS_CONTROLLER".to_string(),
             &mut sender_hsm,
         )
         .expect("Failed to create frame");
@@ -1205,15 +1205,15 @@ mod tests {
         }
 
         // Create sender HSM and register trusted sender
-        let mut sender_hsm = VirtualHSM::new("AUTONOMOUS_CTRL".to_string(), 67890);
+        let mut sender_hsm = VirtualHSM::new("AUTONOMOUS_CONTROLLER".to_string(), 67890);
         let sender_mac_key = *sender_hsm.get_symmetric_key();
-        hsm.add_trusted_ecu("AUTONOMOUS_CTRL".to_string(), sender_mac_key);
+        hsm.add_trusted_ecu("AUTONOMOUS_CONTROLLER".to_string(), sender_mac_key);
 
         // Create frame on unauthorized CAN ID
         let frame = SecuredCanFrame::new(
             can_ids::STEERING_COMMAND, // Unauthorized for brake controller
             vec![0x10, 0x00, 0x00, 0x00],
-            "AUTONOMOUS_CTRL".to_string(),
+            "AUTONOMOUS_CONTROLLER".to_string(),
             &mut sender_hsm,
         )
         .expect("Failed to create frame");

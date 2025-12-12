@@ -128,7 +128,7 @@ mod tests {
             "WHEEL_RR",
             "ENGINE_ECU",
             "STEERING_SENSOR",
-            "AUTONOMOUS_CTRL",
+            "AUTONOMOUS_CONTROLLER",
             "BRAKE_CTRL",
             "STEERING_CTRL",
         ];
