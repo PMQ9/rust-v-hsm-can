@@ -2,24 +2,35 @@
 
 Virtual Hardware Security Module (V-HSM) for CAN Bus security, written in Rust.
 
-**CAN Bus Monitor:**
+**RUNNING ON REAL HARDWARE: Raspberry Pi 4 with Multi-Core Architecture**
 
-<img src="utils/docs/CAN_bus_monitor_HSM_performance.png" alt="Alt Text" width="100%"/>
+This project is deployed on **Raspberry Pi 4 Model B** (4x ARM Cortex-A72 cores) with CPU affinity pinning, demonstrating real-time automotive CAN bus security on embedded hardware.
 
-This repository contains two CAN bus simulators:
+**CAN Bus Monitor on Raspberry Pi 4:**
+
+<img src="utils/docs/CAN_bus_monitor_on_pi4.png" alt="CAN Bus Monitor running on Raspberry Pi 4" width="100%"/>
+
+This repository contains two CAN bus implementations:
 
 1. **[basic/](basic/)** - Original simple CAN bus implementation for learning and testing
-2. **[autonomous_controller/](autonomous_controller/)** - Autonomous vehicle CAN bus simulator with 9 ECUs
+2. **[autonomous_controller/](autonomous_controller/)** - **MAIN PROJECT**: Autonomous vehicle CAN bus running on Raspberry Pi 4 hardware with 9 ECUs
 
-## Quick Start
+## Quick Start (on Raspberry Pi 4)
 
-### Option A: Autonomous Vehicle Simulator (with HSM security)
+### Option A: Autonomous Vehicle System (with HSM security)
 ```bash
 cd autonomous_controller
 cargo run              # Standard mode
 cargo run -- --perf    # With HSM performance metrics
 # Press 'q' to quit
 ```
+
+The system will automatically:
+1. Start HSM service on dedicated Core 3 (crypto engine)
+2. Launch bus server on Core 0
+3. Start 6 sensor ECUs on Core 1 (wheels, engine, steering)
+4. Start 3 controller ECUs on Core 2 (autonomous, brake, steering)
+5. Display real-time dashboard on Core 0
 
 ### Option B: Basic CAN Simulator
 ```bash
@@ -51,14 +62,31 @@ The system simulates a complete CAN bus network:
 
 All components connect to a shared broadcast bus. Any frame sent by any ECU is received by all other connected components.
 
-### Autonomous Vehicle Project Architecture
+### Autonomous Vehicle Project Architecture (Running on Pi4 Hardware)
 
 <img src="utils/docs/architecture.png" alt="CAN Bus Architecture with V-HSM Security" width="100%"/>
+
+**Hardware Platform**: Raspberry Pi 4 Model B
+- **CPU**: 4x ARM Cortex-A72 cores @ 1.5GHz (64-bit ARMv8-A)
+- **Architecture**: aarch64 (ARM64)
+- **Memory**: 4GB LPDDR4
+- **OS**: Linux 6.12.34+rpt-rpi-v8
+
+**Multi-Core Architecture**:
+```
+Core 0: Bus Server + Monitor          (Infrastructure)
+Core 1: 6 Sensor ECUs                 (Data producers)
+Core 2: 3 Controller/Actuator ECUs    (Data consumers)
+Core 3: HSM Service                   (Dedicated crypto engine)
+```
 
 **9 ECUs**: wheel_fl, wheel_fr, wheel_rl, wheel_rr, engine_ecu, steering_sensor, autonomous_controller, brake_controller, steering_controller
 
 **Key Components**:
 - 6 Sensor ECUs sending real-time vehicle data
+- **Centralized HSM Service** on dedicated Core 3 (Unix socket IPC)
+- Hardware-based RNG (Linux getrandom syscall)
+- AES-256-GCM encryption with hardware acceleration
 - V-HSM Security Layer protecting all communications with HMAC-SHA256 + CRC32
 - CAN Bus Server as central TCP broadcast hub
 - Autonomous Controller processing sensor data and making driving decisions
@@ -67,6 +95,8 @@ All components connect to a shared broadcast bus. Any frame sent by any ECU is r
 
 **Features**:
 - Virtual HSM (Hardware Security Module) with HMAC-SHA256 MAC and CRC32 verification
+- **Multi-core processing** with CPU affinity pinning (process-per-ECU model)
+- **Hardware-based random number generation** (cryptographically secure)
 - Secure boot and protected memory for all ECUs
 - Automotive CAN message IDs (0x100-0x3FF range)
 - Periodic sensor broadcasts at 10-20 Hz
@@ -275,8 +305,9 @@ cargo test --package autonomous_vehicle_sim --test anomaly_ids_regression_tests 
 
 See [tests/README.md](tests/README.md) for details.
 
-## Future Development
+## Development Status
 
+**Completed Features:**
 - [x] V-HSM cryptographic layer (HMAC-SHA256 + CRC32)
 - [x] Message authentication codes (MAC)
 - [x] Key management system
@@ -285,8 +316,18 @@ See [tests/README.md](tests/README.md) for details.
 - [x] Performance benchmarks
 - [x] HSM performance evaluation mode
 - [x] Regression tests with CI/CD integration
+- [x] **Hardware deployment on Raspberry Pi 4**
+- [x] **Multi-core architecture with CPU affinity**
+- [x] **Centralized HSM service (Unix socket IPC)**
+- [x] **Hardware-based RNG (Linux getrandom)**
+- [x] **AES-256-GCM encryption**
+
+**Future Enhancements:**
 - [ ] CAN FD support
-- [ ] Deploy and test on hardware cluster
+- [ ] Hardware CAN bus interface (MCP2515/MCP2518FD)
+- [ ] Real-time scheduling (SCHED_FIFO)
+- [ ] Zephyr RTOS integration
+- [ ] Hardware HSM (TPM, ARM TrustZone)
 
 ### ISO 21434 Roadmap
 

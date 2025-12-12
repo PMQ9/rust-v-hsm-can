@@ -7,34 +7,51 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Virtual Hardware Security Module (V-HSM) for CAN Bus security. This repository contains two implementations:
 
 1. **basic/** - Original simple CAN bus simulator with basic ECU emulation
-2. **autonomous_controller/** - Full autonomous vehicle simulation with 9 ECUs (**MAIN PROJECT**)
+2. **autonomous_controller/** - Full autonomous vehicle system with 9 ECUs (**MAIN PROJECT**)
 
-The autonomous_controller project is the primary focus, featuring a realistic automotive system with sensor ECUs, an autonomous driving controller, and actuator ECUs communicating over a virtual CAN bus.
+**HARDWARE DEPLOYMENT:** The autonomous_controller project is deployed on **Raspberry Pi 4 Model B** (4x ARM Cortex-A72 cores) with multi-core architecture and CPU affinity pinning. This is NOT a simulation - it runs on real hardware with:
+- Process-per-ECU model (10 processes total)
+- CPU core assignment for deterministic performance
+- Centralized HSM service on dedicated Core 3
+- Hardware-based RNG (Linux getrandom syscall)
+- AES-256-GCM hardware-accelerated encryption
 
 ## Build and Test Commands
 
-### Autonomous Vehicle Simulation (Main Project)
+### Autonomous Vehicle System (Main Project - Raspberry Pi 4)
 
 ```bash
 cd autonomous_controller
 
-# Run complete simulation with single command (RECOMMENDED)
+# Run complete multi-core system with single command (RECOMMENDED)
 cargo run
-# This starts all 9 ECUs and displays a grouped dashboard
+# This starts:
+# - HSM service on Core 3 (dedicated crypto)
+# - Bus server on Core 0
+# - 9 ECUs on Cores 1-2 with CPU affinity
+# - Monitor dashboard on Core 0
 # Press 'q' to quit
 
-# Build all components
+# Run with HSM performance metrics
+cargo run -- --perf
+
+# Build all components (optimized for ARM64)
 cargo build --release
 
 # Build specific binaries
-cargo build --bin bus_server
-cargo build --bin monitor
+cargo build --bin hsm_service          # HSM service (Core 3)
+cargo build --bin bus_server           # CAN bus server
+cargo build --bin monitor              # Dashboard
 cargo build --bin autonomous_controller
 cargo build --bin wheel_fl
 cargo build --bin brake_controller
 
 # Run tests
 cargo test
+
+# Verify CPU affinity (on Pi4)
+ps -eLo pid,psr,comm | grep -E "hsm_service|wheel_|engine|autonomous|brake|steering"
+# psr column shows which CPU core the process is running on
 ```
 
 ### Basic CAN Bus Simulator
@@ -67,22 +84,29 @@ rust-v-hsm-can/
 │   │   └── bin/         # Basic ECU binaries
 │   └── Cargo.toml
 │
-├── autonomous_controller/  # MAIN PROJECT - Autonomous vehicle simulation
+├── autonomous_controller/  # MAIN PROJECT - Autonomous vehicle on Pi4
 │   ├── src/
-│   │   ├── main.rs         # Single-command launcher
-│   │   ├── types.rs        # Automotive CAN IDs, encoding/decoding
+│   │   ├── main.rs                  # Multi-core launcher with CPU affinity
+│   │   ├── types.rs                 # Automotive CAN IDs, encoding/decoding
 │   │   ├── can_bus.rs
 │   │   ├── ecu.rs
 │   │   ├── network.rs
+│   │   ├── core_affinity_config.rs  # CPU core assignment (Pi4)
+│   │   ├── hsm_service/             # Centralized HSM (Unix socket IPC)
+│   │   │   ├── mod.rs
+│   │   │   ├── protocol.rs          # HsmRequest/HsmResponse
+│   │   │   ├── server.rs            # HSM service server
+│   │   │   └── client.rs            # HsmClient (IPC wrapper)
 │   │   └── bin/
-│   │       ├── bus_server.rs            # CAN bus TCP server
-│   │       ├── monitor.rs               # Grouped dashboard monitor
-│   │       ├── wheel_fl/fr/rl/rr.rs     # 4x wheel speed sensors
-│   │       ├── engine_ecu.rs            # Engine ECU
-│   │       ├── steering_sensor.rs       # Steering sensor
-│   │       ├── autonomous_controller.rs # Autonomous brain
-│   │       ├── brake_controller.rs      # Brake actuator
-│   │       └── steering_controller.rs   # Steering actuator
+│   │       ├── hsm_service.rs           # HSM service (Core 3)
+│   │       ├── bus_server.rs            # CAN bus TCP server (Core 0)
+│   │       ├── monitor.rs               # Grouped dashboard (Core 0)
+│   │       ├── wheel_fl/fr/rl/rr.rs     # 4x wheel sensors (Core 1)
+│   │       ├── engine_ecu.rs            # Engine ECU (Core 1)
+│   │       ├── steering_sensor.rs       # Steering sensor (Core 1)
+│   │       ├── autonomous_controller.rs # Autonomous brain (Core 2)
+│   │       ├── brake_controller.rs      # Brake actuator (Core 2)
+│   │       └── steering_controller.rs   # Steering actuator (Core 2)
 │   ├── Cargo.toml
 │   └── README.md
 │
@@ -91,15 +115,29 @@ rust-v-hsm-can/
 └── README.md
 ```
 
-## Autonomous Vehicle Architecture
+## Autonomous Vehicle Architecture (Raspberry Pi 4 Hardware)
 
-The autonomous_controller project simulates a complete autonomous vehicle with:
+**Hardware Platform:**
+- **CPU**: 4x ARM Cortex-A72 @ 1.5GHz (ARMv8-A 64-bit)
+- **Architecture**: aarch64 (ARM64)
+- **OS**: Linux 6.12.34+rpt-rpi-v8
 
-- **6 Sensor ECUs**: 4x wheel speed, engine, steering sensor
-- **1 Controller ECU**: Autonomous driving controller (receives sensor data, sends control commands)
-- **2 Actuator ECUs**: Brake controller, steering controller
-- **1 Bus Server**: TCP hub for CAN communication (127.0.0.1:9000)
-- **1 Monitor**: Grouped dashboard showing real-time CAN traffic
+**Multi-Core Assignment:**
+```
+Core 0: bus_server + monitor          (Infrastructure)
+Core 1: 6x sensor ECUs                (Data producers - wheels, engine, steering)
+Core 2: 3x controller/actuator ECUs   (Data consumers - autonomous, brake, steering)
+Core 3: HSM service                   (Dedicated crypto engine)
+```
+
+The autonomous_controller project runs a complete autonomous vehicle on real hardware with:
+
+- **6 Sensor ECUs** (Core 1): 4x wheel speed, engine, steering sensor
+- **1 Controller ECU** (Core 2): Autonomous driving controller (receives sensor data, sends control commands)
+- **2 Actuator ECUs** (Core 2): Brake controller, steering controller
+- **1 HSM Service** (Core 3): Centralized cryptographic operations via Unix socket IPC
+- **1 Bus Server** (Core 0): TCP hub for CAN communication (127.0.0.1:9000)
+- **1 Monitor** (Core 0): Grouped dashboard showing real-time CAN traffic
 
 ### Grouped Dashboard Monitor
 

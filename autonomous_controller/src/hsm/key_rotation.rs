@@ -361,11 +361,16 @@ impl KeyRotationManager {
     }
 
     /// Export key for distribution (encrypted with key_encryption_key)
-    pub fn export_key(&self, key_id: u32, key_encryption_key: &[u8; 32]) -> Option<Vec<u8>> {
+    pub fn export_key(
+        &self,
+        key_id: u32,
+        key_encryption_key: &[u8; 32],
+        rng: &mut impl rand::RngCore,
+    ) -> Option<Vec<u8>> {
         let key = self.session_keys.get(&key_id)?;
 
         // Encrypt key material with AES-256-GCM (provides confidentiality + authenticity)
-        let encrypted = encrypt_key_simple(&key.key_material, key_encryption_key, key_id);
+        let encrypted = encrypt_key_simple(&key.key_material, key_encryption_key, key_id, rng);
 
         Some(encrypted)
     }
@@ -445,14 +450,17 @@ pub fn derive_session_key_hkdf(
 /// - Nonce is randomly generated for each encryption (prevents reuse)
 /// - Associated data includes key_id to bind encryption to specific key
 /// - Returns [nonce: 12 bytes] + [ciphertext + auth_tag: 48 bytes] = 60 bytes total
-fn encrypt_key_simple(key: &[u8; 32], kek: &[u8; 32], key_id: u32) -> Vec<u8> {
-    use rand::RngCore;
-
+fn encrypt_key_simple(
+    key: &[u8; 32],
+    kek: &[u8; 32],
+    key_id: u32,
+    rng: &mut impl rand::RngCore,
+) -> Vec<u8> {
     // SECURITY FIX: Generate cryptographically secure random nonce (96 bits / 12 bytes)
     // This prevents catastrophic nonce reuse if key_id is ever reused
     // (e.g., after system reset, key rollback, or counter wraparound)
     let mut nonce = [0u8; 12];
-    rand::rngs::OsRng.fill_bytes(&mut nonce);
+    rng.fill_bytes(&mut nonce);
 
     // Additional authenticated data (not encrypted, but authenticated)
     let mut aad = Vec::new();
@@ -613,7 +621,7 @@ mod tests {
         let kek = [0xBBu8; 32];
         let key_id = 42;
 
-        let encrypted = encrypt_key_simple(&key, &kek, key_id);
+        let encrypted = encrypt_key_simple(&key, &kek, key_id, &mut rand::rngs::OsRng);
         let decrypted = decrypt_key_simple(&encrypted, &kek, key_id).unwrap();
 
         assert_eq!(key, decrypted, "Decrypt should reverse encrypt");
@@ -626,7 +634,7 @@ mod tests {
         let kek2 = [0xCCu8; 32];
         let key_id = 42;
 
-        let encrypted = encrypt_key_simple(&key, &kek1, key_id);
+        let encrypted = encrypt_key_simple(&key, &kek1, key_id, &mut rand::rngs::OsRng);
         let decrypted = decrypt_key_simple(&encrypted, &kek2, key_id);
 
         // With AES-256-GCM, wrong KEK should cause authentication failure (return None)
@@ -729,7 +737,9 @@ mod tests {
 
         // Export current key
         let key_id = manager.current_key_id();
-        let exported = manager.export_key(key_id, &kek).unwrap();
+        let exported = manager
+            .export_key(key_id, &kek, &mut rand::rngs::OsRng)
+            .unwrap();
 
         // Create second manager and import key
         let master_key2 = [0x66u8; 32]; // Different master key
@@ -747,7 +757,9 @@ mod tests {
         // Import with next key_id should work if we use the correct key_id for export/import
         let next_key_id = manager2.current_key_id() + 1;
         manager.rotate_key();
-        let exported2 = manager.export_key(next_key_id, &kek).unwrap();
+        let exported2 = manager
+            .export_key(next_key_id, &kek, &mut rand::rngs::OsRng)
+            .unwrap();
         let result2 = manager2.import_key(next_key_id, &exported2, &kek);
         assert!(
             result2.is_ok(),
@@ -768,7 +780,7 @@ mod tests {
         assert_eq!(manager.current_key_id(), 2);
 
         // Try to import key_id = 1 (rollback attack)
-        let old_key_encrypted = encrypt_key_simple(&[0xFFu8; 32], &kek, 1);
+        let old_key_encrypted = encrypt_key_simple(&[0xFFu8; 32], &kek, 1, &mut rand::rngs::OsRng);
         let result = manager.import_key(1, &old_key_encrypted, &kek);
 
         assert!(result.is_err(), "Should reject rollback to old key_id");

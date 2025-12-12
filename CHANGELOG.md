@@ -2,6 +2,44 @@
 
 ## 2025-12-12
 
+### Documentation Update: Raspberry Pi 4 Hardware Deployment
+
+**Updated:**
+- All documentation now reflects hardware deployment on Raspberry Pi 4 Model B
+- README.md: Added Pi4 hardware platform details and multi-core architecture overview
+- autonomous_controller/README.md: Updated with hardware specs, multi-core diagrams, IPC architecture
+- CLAUDE.md: Updated project overview, build commands, and repository structure for Pi4 deployment
+- Clarified this is NOT a simulation but real hardware implementation
+- Added new screenshot: CAN bus monitor running on Pi4 hardware
+
+**Hardware Platform:**
+- CPU: 4x ARM Cortex-A72 @ 1.5GHz (ARMv8-A 64-bit)
+- Architecture: aarch64 (ARM64)
+- OS: Linux 6.12.34+rpt-rpi-v8
+- Multi-core architecture with CPU affinity pinning (Core 0-3)
+- Centralized HSM service on dedicated Core 3
+- Hardware-based RNG and AES-256-GCM encryption
+
+### Hardware RNG Implementation for Raspberry Pi 4
+
+**Added:**
+- Direct hardware RNG access via /dev/hwrng on Raspberry Pi 4
+- HardwareRng module with buffered reading and graceful fallback chain
+- Auto-detection of hardware RNG on Linux systems
+- Configuration via environment variables (VHSM_ENABLE_HWRNG, VHSM_HWRNG_PATH)
+
+**Changed:**
+- VirtualHSM now uses HardwareRng instead of direct OsRng/StdRng
+- Key generation uses hardware TRNG when available, falls back to OsRng
+- AES-GCM nonce generation uses HSM's RNG for consistency
+- Maintains deterministic mode for testing (seed-based)
+
+**Technical Details:**
+- hardware_rng.rs: New module with buffered 4KB reads from /dev/hwrng
+- Fallback chain: Deterministic (seed) → Hardware (/dev/hwrng) → OsRng (/dev/urandom)
+- Zero new dependencies (uses existing rand crate)
+- 284/286 tests passing (2 pre-existing flaky tests)
+
 ### HSM Service Frame Verification Fix + ECU Naming Consistency
 
 **Fixed:**

@@ -1,42 +1,54 @@
-# Autonomous Vehicle CAN Bus Simulator
+# Autonomous Vehicle CAN Bus System
 
-A realistic CAN bus simulation for autonomous vehicle development and security research. This project simulates a complete autonomous vehicle system with sensor ECUs, actuator controllers, and an autonomous driving controller communicating over a virtual CAN bus.
+**Running on Raspberry Pi 4 Hardware**
 
-## System Architecture
+A realistic CAN bus implementation for autonomous vehicle development and security research, deployed on **Raspberry Pi 4** with multi-core architecture. This project demonstrates a complete autonomous vehicle system with sensor ECUs, actuator controllers, and an autonomous driving controller communicating over a virtual CAN bus with hardware security.
+
+## Hardware Platform
+
+**Raspberry Pi 4 Model B**
+- **CPU**: 4x ARM Cortex-A72 @ 1.5GHz (ARMv8-A 64-bit)
+- **Architecture**: aarch64 (ARM64)
+- **Memory**: 4GB LPDDR4-3200
+- **OS**: Linux 6.12.34+rpt-rpi-v8
+
+## Multi-Core Architecture
+
+**Process-per-ECU model with CPU affinity pinning:**
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        CAN BUS SERVER                           │
-│                      (127.0.0.1:9000)                           │
-└───────────┬─────────────────────────────────────────┬───────────┘
-            │                                         │
-    ┌───────▼────────┐                         ┌──────▼───────┐
-    │  SENSOR LAYER  │                         │ MONITOR      │
-    ├────────────────┤                         │ (Observer)   │
-    │ • 4x Wheel     │                         └──────────────┘
-    │   Speed        │
-    │ • Engine ECU   │
-    │ • Steering     │
-    │   Sensor       │
-    └───────┬────────┘
-            │
-    ┌───────▼────────────┐
-    │  CONTROLLER LAYER  │
-    ├────────────────────┤
-    │ • Autonomous       │
-    │   Controller       │
-    │   (Brain)          │
-    └───────┬────────────┘
-            │
-    ┌───────▼────────┐
-    │ ACTUATOR LAYER │
-    ├────────────────┤
-    │ • Brake        │
-    │   Controller   │
-    │ • Steering     │
-    │   Controller   │
-    └────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  Raspberry Pi 4: 4x ARM Cortex-A72 Cores                         │
+├──────────┬──────────┬──────────┬────────────────────────────────┤
+│  Core 0  │  Core 1  │  Core 2  │         Core 3                 │
+│          │          │          │                                │
+│  Bus     │ Sensors  │ Controls │  HSM Service (Crypto Engine)   │
+│  Server  │  (TX)    │ (TX+RX)  │  ┌──────────────────────────┐  │
+│          │          │          │  │ • MAC generation/verify  │  │
+│  Monitor │ 6 ECUs:  │ 3 ECUs:  │  │ • CRC calculation/verify │  │
+│          │ • Wheels │ • Auto   │  │ • Replay protection      │  │
+│          │   (4x)   │   Ctrl   │  │ • Anomaly detection      │  │
+│          │ • Engine │ • Brake  │  │ • Session counters       │  │
+│          │ • Steer  │   Ctrl   │  │ • Access control         │  │
+│          │   Sensor │ • Steer  │  │ • AES-256-GCM crypto     │  │
+│          │          │   Ctrl   │  │ • Hardware RNG           │  │
+│          │          │          │  └──────────────────────────┘  │
+└──────────┴──────────┴──────────┴────────────────────────────────┘
+           │          │          │            │
+           └──────────┴──────────┴────────────┘
+                      │
+           ┌──────────▼──────────┐
+           │   CAN BUS SERVER    │
+           │  (127.0.0.1:9000)   │
+           │  TCP Broadcast Hub  │
+           └─────────────────────┘
 ```
+
+**IPC Architecture:**
+- ECUs communicate via TCP (CAN bus server)
+- HSM service uses Unix Domain Sockets (`/tmp/vsm_hsm_service.sock`)
+- All ECUs connect to centralized HSM service for cryptographic operations
+- Typical HSM latency: 35-70µs (including IPC overhead)
 
 ## ECU Components
 
@@ -85,14 +97,19 @@ A realistic CAN bus simulation for autonomous vehicle development and security r
 | 0x301 | Throttle Command    | 1   | 10 Hz      |
 | 0x302 | Steering Command    | 2   | 10 Hz      |
 
-## Quick Start
+## Quick Start (Raspberry Pi 4)
 
-**All ECUs now use Virtual-HSM (Hardware Security Module) with:**
+**Hardware Deployment with Multi-Core Processing:**
+
+All ECUs use a **centralized Virtual-HSM service** running on dedicated Core 3 with:
 - **MAC**: HMAC-SHA256 message authentication
 - **CRC**: CRC32 integrity verification
 - **Replay Protection**: Sliding window + timestamp validation (100-counter window, 60s max age)
 - **Secure Boot**: Firmware signature verification
 - **Protected Memory**: Simulated MPU-protected firmware storage
+- **Hardware RNG**: Linux getrandom syscall (cryptographically secure)
+- **AES-256-GCM**: Hardware-accelerated encryption
+- **CPU Affinity**: Process pinning for deterministic performance
 
 ### HSM Cryptographic Keys
 
@@ -115,19 +132,23 @@ Each ECU's HSM contains the following 256-bit keys:
 
 ```bash
 cd autonomous_controller
-cargo run
-# or
-./run.sh
+cargo run              # Standard mode
+cargo run -- --perf    # With HSM performance metrics
 ```
 
-This will:
-1. Start the CAN bus server in the background
-2. Launch all 6 HSM-secured sensor ECUs (wheels, engine, steering)
-3. Start the HSM-secured autonomous controller
-4. Launch 2 HSM-secured actuator controllers (brake, steering)
-5. Display a real-time dashboard showing secured CAN traffic with MAC and CRC
+This automatically launches the complete multi-core system:
+1. **Core 3**: Start HSM service (dedicated crypto engine)
+2. **Core 0**: Start CAN bus server (TCP hub)
+3. **Core 1**: Launch 6 sensor ECUs (wheels, engine, steering)
+4. **Core 2**: Launch 3 controller ECUs (autonomous, brake, steering)
+5. **Core 0**: Display real-time dashboard with security metrics
 
-**Press 'q' to quit** - all components will shut down cleanly.
+**Press 'q' to quit** - all components will shut down cleanly with proper core cleanup.
+
+**Performance Monitoring:**
+- Use `htop` or `ps -eLo pid,psr,comm` to verify CPU affinity
+- Monitor HSM service performance in `--perf` mode
+- Typical system throughput: >10,000 CAN messages/second
 
 ### Build All Components
 

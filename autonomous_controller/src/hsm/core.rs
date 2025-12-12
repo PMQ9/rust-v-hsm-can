@@ -1,13 +1,13 @@
 use chrono::{DateTime, Utc};
 use colored::*;
-use rand::rngs::{OsRng, StdRng};
-use rand::{Rng, RngCore, SeedableRng};
+use rand::RngCore;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use super::crypto;
 use super::errors::{MacFailureReason, ReplayError};
+use super::hardware_rng::HardwareRng;
 use super::performance::{PerformanceMetrics, PerformanceSnapshot};
 use super::replay::{ReplayProtectionConfig, ReplayProtectionState};
 
@@ -58,12 +58,9 @@ pub struct VirtualHSM {
     /// ECU identifier
     ecu_id: String,
 
-    /// Random number generator (deterministic, for testing/simulation)
-    rng: StdRng,
-
-    /// Use hardware-based RNG (OsRng) instead of deterministic StdRng
-    /// When true, uses OS-provided cryptographically secure RNG (Linux /dev/urandom, Windows CryptGenRandom, ARM TrustZone)
-    use_hardware_rng: bool,
+    /// Random number generator (hardware RNG, OsRng fallback, or deterministic for testing)
+    /// Auto-selects hardware RNG (/dev/hwrng) on Raspberry Pi 4, falls back to OsRng if unavailable
+    rng: HardwareRng,
 
     /// Performance metrics (None if performance tracking disabled)
     performance_metrics: Option<Arc<Mutex<PerformanceMetrics>>>,
@@ -103,8 +100,8 @@ impl VirtualHSM {
 
     /// Create a new HSM instance with hardware RNG and optional performance tracking
     pub fn new_secure_with_performance(ecu_id: String, performance_mode: bool) -> Self {
-        // Use dummy seed for StdRng (will not be used when use_hardware_rng = true)
-        let rng = StdRng::seed_from_u64(0);
+        // Auto-detect hardware RNG (uses /dev/hwrng on Pi 4, falls back to OsRng)
+        let rng = HardwareRng::new();
 
         let mut hsm = Self {
             master_key: [0u8; 32],
@@ -118,7 +115,6 @@ impl VirtualHSM {
             session_counter: 0,
             ecu_id,
             rng,
-            use_hardware_rng: true, // Enable hardware RNG for production
             performance_metrics: if performance_mode {
                 Some(Arc::new(Mutex::new(PerformanceMetrics::new())))
             } else {
@@ -132,20 +128,21 @@ impl VirtualHSM {
         };
 
         // Generate cryptographically secure keys using hardware RNG
-        OsRng.fill_bytes(&mut hsm.master_key);
-        OsRng.fill_bytes(&mut hsm.secure_boot_key);
-        OsRng.fill_bytes(&mut hsm.firmware_update_key);
-        OsRng.fill_bytes(&mut hsm.symmetric_comm_key);
-        OsRng.fill_bytes(&mut hsm.key_encryption_key);
-        OsRng.fill_bytes(&mut hsm.rng_seed_key);
-        OsRng.fill_bytes(&mut hsm.seed_key_access);
+        hsm.rng.fill_bytes(&mut hsm.master_key);
+        hsm.rng.fill_bytes(&mut hsm.secure_boot_key);
+        hsm.rng.fill_bytes(&mut hsm.firmware_update_key);
+        hsm.rng.fill_bytes(&mut hsm.symmetric_comm_key);
+        hsm.rng.fill_bytes(&mut hsm.key_encryption_key);
+        hsm.rng.fill_bytes(&mut hsm.rng_seed_key);
+        hsm.rng.fill_bytes(&mut hsm.seed_key_access);
 
         hsm
     }
 
     /// Create a new HSM instance with optional performance tracking (deterministic)
     pub fn with_performance(ecu_id: String, seed: u64, performance_mode: bool) -> Self {
-        let rng = StdRng::seed_from_u64(seed);
+        // Use deterministic RNG for testing/simulation
+        let rng = HardwareRng::new_deterministic(seed);
 
         let mut hsm = Self {
             master_key: [0u8; 32],
@@ -159,7 +156,6 @@ impl VirtualHSM {
             session_counter: 0,
             ecu_id,
             rng,
-            use_hardware_rng: false, // Use deterministic RNG for testing/simulation
             performance_metrics: if performance_mode {
                 Some(Arc::new(Mutex::new(PerformanceMetrics::new())))
             } else {
@@ -173,13 +169,13 @@ impl VirtualHSM {
         };
 
         // Generate deterministic keys based on seed
-        hsm.rng.fill(&mut hsm.master_key);
-        hsm.rng.fill(&mut hsm.secure_boot_key);
-        hsm.rng.fill(&mut hsm.firmware_update_key);
-        hsm.rng.fill(&mut hsm.symmetric_comm_key);
-        hsm.rng.fill(&mut hsm.key_encryption_key);
-        hsm.rng.fill(&mut hsm.rng_seed_key);
-        hsm.rng.fill(&mut hsm.seed_key_access);
+        hsm.rng.fill_bytes(&mut hsm.master_key);
+        hsm.rng.fill_bytes(&mut hsm.secure_boot_key);
+        hsm.rng.fill_bytes(&mut hsm.firmware_update_key);
+        hsm.rng.fill_bytes(&mut hsm.symmetric_comm_key);
+        hsm.rng.fill_bytes(&mut hsm.key_encryption_key);
+        hsm.rng.fill_bytes(&mut hsm.rng_seed_key);
+        hsm.rng.fill_bytes(&mut hsm.seed_key_access);
 
         hsm
     }
@@ -516,35 +512,18 @@ impl VirtualHSM {
     // Random Number Generation
     // ========================================================================
 
-    /// Fill buffer with random bytes using hardware RNG (OsRng) or deterministic RNG (StdRng)
-    /// - Hardware RNG (production): Uses OS-provided CSPRNG (Linux /dev/urandom, Windows CryptGenRandom, ARM TrustZone)
-    /// - Deterministic RNG (testing): Uses StdRng with fixed seed for reproducibility
-    fn fill_random_bytes(&mut self, buffer: &mut [u8]) {
-        if self.use_hardware_rng {
-            // Use hardware-based cryptographically secure RNG
-            OsRng.fill_bytes(buffer);
-        } else {
-            // Use deterministic RNG for testing/simulation
-            self.rng.fill(buffer);
-        }
-    }
-
     /// Generate a random number (for nonces, challenges, etc.)
-    /// Uses hardware RNG (OsRng) in production mode, or deterministic RNG (StdRng) in testing mode
+    /// - Production: Uses hardware RNG (/dev/hwrng on Pi 4) or OS RNG (/dev/urandom) as fallback
+    /// - Testing: Uses deterministic RNG (StdRng) with fixed seed for reproducibility
     pub fn generate_random(&mut self) -> u64 {
-        if self.use_hardware_rng {
-            // Use hardware-based cryptographically secure RNG
-            OsRng.next_u64()
-        } else {
-            // Use deterministic RNG for testing/simulation
-            Rng::r#gen(&mut self.rng)
-        }
+        self.rng.next_u64()
     }
 
     /// Generate random bytes (for keys, nonces, etc.)
-    /// Uses hardware RNG (OsRng) in production mode, or deterministic RNG (StdRng) in testing mode
+    /// - Production: Uses hardware RNG (/dev/hwrng on Pi 4) or OS RNG (/dev/urandom) as fallback
+    /// - Testing: Uses deterministic RNG (StdRng) with fixed seed for reproducibility
     pub fn generate_random_bytes(&mut self, buffer: &mut [u8]) {
-        self.fill_random_bytes(buffer);
+        self.rng.fill_bytes(buffer);
     }
 
     // ========================================================================
@@ -957,7 +936,7 @@ impl VirtualHSM {
     }
 
     /// Export current session key for distribution (encrypted)
-    pub fn export_session_key(&self) -> Result<Vec<u8>, String> {
+    pub fn export_session_key(&mut self) -> Result<Vec<u8>, String> {
         let manager = self
             .key_rotation_manager
             .as_ref()
@@ -965,7 +944,7 @@ impl VirtualHSM {
 
         let key_id = manager.current_key_id();
         manager
-            .export_key(key_id, &self.key_encryption_key)
+            .export_key(key_id, &self.key_encryption_key, &mut self.rng)
             .ok_or_else(|| "Failed to export key".to_string())
     }
 }
