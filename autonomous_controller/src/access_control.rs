@@ -44,7 +44,7 @@ pub fn build_autonomous_vehicle_policies() -> HashMap<String, CanIdPermissions> 
     policies.insert("STEERING_SENSOR".to_string(), steering_sensor);
 
     // Autonomous Controller - receives sensor data, transmits status and commands
-    let mut auto_ctrl = CanIdPermissions::new("AUTONOMOUS_CTRL".to_string());
+    let mut auto_ctrl = CanIdPermissions::new("AUTONOMOUS_CONTROLLER".to_string());
     auto_ctrl
         .allow_tx(can_ids::AUTO_STATUS.value())
         .allow_tx(can_ids::AUTO_TRAJECTORY.value())
@@ -62,7 +62,7 @@ pub fn build_autonomous_vehicle_policies() -> HashMap<String, CanIdPermissions> 
         can_ids::STEERING_ANGLE.value(),
         can_ids::STEERING_TORQUE.value(),
     ]);
-    policies.insert("AUTONOMOUS_CTRL".to_string(), auto_ctrl);
+    policies.insert("AUTONOMOUS_CONTROLLER".to_string(), auto_ctrl);
 
     // Brake Controller - only receives brake commands
     let mut brake_ctrl = CanIdPermissions::new("BRAKE_CTRL".to_string());
@@ -97,7 +97,7 @@ mod tests {
 
     #[test]
     fn test_autonomous_ctrl_policy() {
-        let policy = load_policy_for_ecu("AUTONOMOUS_CTRL").unwrap();
+        let policy = load_policy_for_ecu("AUTONOMOUS_CONTROLLER").unwrap();
         // Can transmit commands
         assert!(policy.can_transmit(can_ids::BRAKE_COMMAND.value()));
         assert!(policy.can_transmit(can_ids::THROTTLE_COMMAND.value()));

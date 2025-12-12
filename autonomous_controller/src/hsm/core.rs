@@ -891,6 +891,12 @@ impl VirtualHSM {
         source_ecu: &str,
         key_version: u32,
     ) -> Option<[u8; 32]> {
+        // CENTRALIZED HSM FIX: If verifying frame from same ECU (sender's HSM instance),
+        // use own symmetric key instead of looking up in verification keys map
+        if source_ecu == self.ecu_id {
+            return Some(self.symmetric_comm_key);
+        }
+
         // If key_version is 0, use legacy verification keys
         if key_version == 0 {
             let ecu_id = hash_ecu_name(source_ecu);

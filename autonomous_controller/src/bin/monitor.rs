@@ -303,7 +303,7 @@ impl Dashboard {
                 || id == can_ids::THROTTLE_COMMAND
                 || id == can_ids::STEERING_COMMAND =>
             {
-                if secured_frame.source == "AUTONOMOUS_CTRL" {
+                if secured_frame.source == "AUTONOMOUS_CONTROLLER" {
                     self.controller_tx
                         .insert(secured_frame.can_id, latest.clone());
                 }
@@ -314,7 +314,7 @@ impl Dashboard {
         }
 
         // Track sensor messages received by controller
-        if secured_frame.source != "AUTONOMOUS_CTRL" {
+        if secured_frame.source != "AUTONOMOUS_CONTROLLER" {
             let sensor_ids = [
                 can_ids::WHEEL_SPEED_FL,
                 can_ids::WHEEL_SPEED_FR,

@@ -1,5 +1,27 @@
 # Changelog
 
+## 2025-12-12
+
+### HSM Service Frame Verification Fix + ECU Naming Consistency
+
+**Fixed:**
+- Frame verification now uses sender's ECU ID (frame.source) instead of receiver's ECU ID
+- Anomaly detection now uses sender's baseline for correct validation
+- Verification key lookup now returns own symmetric key when verifying own frames
+- Autonomous controller ECU name inconsistency ("AUTONOMOUS_CTRL" vs "AUTONOMOUS_CONTROLLER")
+- Access control policy now uses correct ECU name, allowing controller to send commands
+- Monitor now correctly recognizes and displays controller's transmitted commands
+- Resolves false positive attack detection caused by cryptographic key mismatch
+
+**Technical Details:**
+- server.rs VerifyFrame: Changed to use frame.source for HSM instance lookup (line 185)
+- server.rs DetectAnomaly: Changed to use frame.source for baseline matching (line 248)
+- core.rs get_verification_key_by_version: Returns own symmetric_comm_key when source_ecu == self.ecu_id (line 896)
+- access_control.rs: Changed policy key from "AUTONOMOUS_CTRL" to "AUTONOMOUS_CONTROLLER"
+- monitor.rs: Changed source name checks to use "AUTONOMOUS_CONTROLLER"
+- security_gateway.rs: Updated ECU registration to use "AUTONOMOUS_CONTROLLER"
+- Centralized HSM architecture: Each ECU's HSM instance verifies frames using that ECU's own symmetric keys
+
 ## 2025-12-11
 
 ### Multi-Core HSM Architecture - ECU Migration Complete

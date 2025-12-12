@@ -178,9 +178,11 @@ impl HsmServiceServer {
                 Resp::MacGenerated { mac }
             }
 
-            VerifyFrame { ecu_id, frame } => {
+            VerifyFrame { ecu_id: _, frame } => {
+                // IMPORTANT: Use sender's ECU ID (frame.source) for verification,
+                // not the receiver's ECU ID. Frames are signed with sender's keys.
                 let mut map = hsm_map.lock().await;
-                let hsm = Self::get_or_create_hsm(&ecu_id, &mut map, perf_mode);
+                let hsm = Self::get_or_create_hsm(&frame.source, &mut map, perf_mode);
                 let result = frame.verify(hsm);
                 Resp::FrameVerified { result }
             }
@@ -239,9 +241,11 @@ impl HsmServiceServer {
                 }
             }
 
-            DetectAnomaly { ecu_id, frame } => {
+            DetectAnomaly { ecu_id: _, frame } => {
+                // IMPORTANT: Use sender's ECU ID (frame.source) for anomaly detection,
+                // since anomaly baselines are trained per sender ECU
                 let mut map = hsm_map.lock().await;
-                let hsm = Self::get_or_create_hsm(&ecu_id, &mut map, perf_mode);
+                let hsm = Self::get_or_create_hsm(&frame.source, &mut map, perf_mode);
                 let result = hsm.detect_anomaly(&frame);
                 Resp::AnomalyDetected { result }
             }
