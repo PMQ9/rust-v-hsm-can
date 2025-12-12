@@ -10,7 +10,7 @@ use autonomous_vehicle_sim::types::{can_ids, encoding};
 use std::time::Duration;
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
-const SENDER_NAME: &str = "AUTONOMOUS_CTRL";
+const SENDER_NAME: &str = "AUTONOMOUS_CONTROLLER";
 const HSM_SEED: u64 = 0x2001; // Same seed as autonomous_controller
 const SEND_INTERVAL_MS: u64 = 100; // Send every 100ms (10 Hz)
 const TEST_DURATION_SECS: u64 = 30; // Run for 30 seconds

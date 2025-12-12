@@ -33,6 +33,9 @@ impl ValidationError {
             crate::hsm::VerifyError::MacMismatch(_) => ValidationError::MacMismatch,
             crate::hsm::VerifyError::UnauthorizedAccess => ValidationError::UnauthorizedAccess,
             crate::hsm::VerifyError::ReplayDetected(_) => ValidationError::ReplayDetected,
+            crate::hsm::VerifyError::Other(msg) => {
+                ValidationError::AnomalyDetected(format!("IPC/Communication error: {}", msg))
+            }
         }
     }
 }

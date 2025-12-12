@@ -1,12 +1,17 @@
+use autonomous_vehicle_sim::core_affinity_config::{available_cores, has_sufficient_cores};
 use colored::*;
 use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::Duration;
 
+/// Default path for HSM service Unix socket
+const HSM_SOCKET_PATH: &str = "/tmp/vsm_hsm_service.sock";
+
 fn main() {
     // Parse command-line arguments
     let args: Vec<String> = std::env::args().collect();
     let perf_mode = args.contains(&"--perf".to_string());
+    let multi_core = !args.contains(&"--no-multicore".to_string());
 
     println!(
         "{}",
@@ -33,14 +38,42 @@ fn main() {
             "→".bright_blue()
         );
     }
+
+    // Display multi-core architecture status
+    if multi_core {
+        let cores = available_cores().unwrap_or(0);
+        if has_sufficient_cores() {
+            println!(
+                "{} Multi-core architecture enabled ({} cores detected)",
+                "ℹ".bright_blue(),
+                cores
+            );
+            println!(
+                "{} Core 0: Infrastructure | Core 1: Sensors | Core 2: Controllers | Core 3: HSM",
+                "→".bright_blue()
+            );
+        } else {
+            println!(
+                "{} Insufficient cores for multi-core mode ({} < 4), running without affinity",
+                "→".yellow(),
+                cores
+            );
+        }
+    } else {
+        println!("{} Multi-core disabled (--no-multicore)", "→".yellow());
+    }
     println!();
 
     // Cleanup: Kill any old simulation processes first
     println!("{} Cleaning up old processes...", "→".yellow());
+
+    // Also cleanup old HSM socket if exists
+    let _ = std::fs::remove_file(HSM_SOCKET_PATH);
+
     let cleanup = Command::new("pkill")
         .args([
             "-f",
-            "target/debug/(bus_server|autonomous_controller|wheel|engine|steering|brake|monitor)",
+            "target/debug/(hsm_service|bus_server|autonomous_controller|wheel|engine|steering|brake|monitor)",
         ])
         .output();
 
@@ -60,8 +93,56 @@ fn main() {
 
     let mut processes: Vec<Child> = Vec::new();
 
-    // Start bus server first
-    println!("{} Starting CAN bus server...", "→".green());
+    // =========================================================================
+    // Start HSM Service first (Core 3)
+    // =========================================================================
+    println!("{} Starting HSM service (Core 3)...", "→".green());
+    let mut hsm_cmd = Command::new("cargo");
+    hsm_cmd.args(["run", "--bin", "hsm_service"]);
+    if perf_mode {
+        hsm_cmd.args(["--", "--perf"]);
+    }
+    match hsm_cmd.stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
+        Ok(child) => {
+            processes.push(child);
+            println!("{} HSM service started", "✓".green().bold());
+        }
+        Err(e) => {
+            eprintln!("{} Failed to start HSM service: {}", "✗".red().bold(), e);
+            return;
+        }
+    }
+
+    // Wait for HSM service to be ready (Unix socket created)
+    println!("{} Waiting for HSM service to be ready...", "→".yellow());
+    let mut hsm_ready = false;
+    for _ in 0..20 {
+        // Try for 2 seconds
+        if std::path::Path::new(HSM_SOCKET_PATH).exists() {
+            hsm_ready = true;
+            break;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    if hsm_ready {
+        println!(
+            "{} HSM service ready (socket: {})",
+            "✓".green(),
+            HSM_SOCKET_PATH
+        );
+    } else {
+        println!(
+            "{} HSM service socket not found after 2s, continuing anyway...",
+            "→".yellow()
+        );
+    }
+    println!();
+
+    // =========================================================================
+    // Start CAN bus server (Core 0)
+    // =========================================================================
+    println!("{} Starting CAN bus server (Core 0)...", "→".green());
     let mut bus_cmd = Command::new("cargo");
     bus_cmd.args(["run", "--bin", "bus_server"]);
     if perf_mode {
@@ -82,8 +163,10 @@ fn main() {
     println!("{} Waiting for bus server to be ready...", "→".yellow());
     thread::sleep(Duration::from_secs(2));
 
-    // Start all sensor ECUs
-    println!("\n{} Starting sensor ECUs...", "→".green());
+    // =========================================================================
+    // Start all sensor ECUs (Core 1)
+    // =========================================================================
+    println!("\n{} Starting sensor ECUs (Core 1)...", "→".green());
     let sensors = vec![
         "wheel_fl",
         "wheel_fr",
@@ -115,8 +198,13 @@ fn main() {
         thread::sleep(Duration::from_millis(200));
     }
 
-    // Start autonomous controller
-    println!("\n{} Starting autonomous controller...", "→".green());
+    // =========================================================================
+    // Start autonomous controller (Core 2)
+    // =========================================================================
+    println!(
+        "\n{} Starting autonomous controller (Core 2)...",
+        "→".green()
+    );
     let mut controller_cmd = Command::new("cargo");
     controller_cmd.args(["run", "--bin", "autonomous_controller"]);
     if perf_mode {
@@ -144,8 +232,10 @@ fn main() {
     }
     thread::sleep(Duration::from_millis(500));
 
-    // Start actuator ECUs
-    println!("\n{} Starting actuator ECUs...", "→".green());
+    // =========================================================================
+    // Start actuator ECUs (Core 2)
+    // =========================================================================
+    println!("\n{} Starting actuator ECUs (Core 2)...", "→".green());
     let actuators = vec!["brake_controller", "steering_controller"];
 
     for actuator in &actuators {
@@ -211,7 +301,10 @@ fn main() {
         println!();
     }
 
-    println!("{} Starting monitor (dashboard)...", "→".green());
+    // =========================================================================
+    // Start monitor (Core 0)
+    // =========================================================================
+    println!("{} Starting monitor (Core 0)...", "→".green());
 
     let mut monitor_process = match Command::new("cargo")
         .args(["run", "--bin", "monitor"])

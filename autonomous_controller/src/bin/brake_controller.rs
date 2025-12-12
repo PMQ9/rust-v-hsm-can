@@ -1,10 +1,11 @@
+use autonomous_vehicle_sim::core_affinity_config::pin_by_component;
 use autonomous_vehicle_sim::error_handling::{AttackDetector, ValidationError};
 use autonomous_vehicle_sim::hsm::{SecuredCanFrame, SignedFirmware, VirtualHSM};
+use autonomous_vehicle_sim::hsm_service::HsmClient;
 use autonomous_vehicle_sim::network::{BusClient, NetMessage};
 use autonomous_vehicle_sim::protected_memory::ProtectedMemory;
 use autonomous_vehicle_sim::security_log::SecurityLogger;
 use autonomous_vehicle_sim::types::{can_ids, encoding};
-use autonomous_vehicle_sim::{AnomalyResult, baseline_persistence};
 use colored::*;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -12,13 +13,19 @@ use tokio::sync::mpsc;
 
 const BUS_ADDRESS: &str = "127.0.0.1:9000";
 const ECU_NAME: &str = "BRAKE_CTRL";
-const HSM_SEED: u64 = 0x3001; // Unique seed for this ECU
+const HSM_SOCKET_PATH: &str = "/tmp/vsm_hsm_service.sock";
+const HSM_SEED: u64 = 0x3001; // Unique seed for boot-time HSM
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Parse command-line arguments
     let args: Vec<String> = std::env::args().collect();
     let perf_mode = args.contains(&"--perf".to_string());
+
+    // Pin to assigned core (Core 2 for actuators)
+    if let Err(e) = pin_by_component(ECU_NAME.to_lowercase().as_str()) {
+        eprintln!("{} Core pinning failed: {} (continuing)", "→".yellow(), e);
+    }
 
     println!("{}", "═══════════════════════════════════════".red().bold());
     println!("{}", "        Brake Controller ECU           ".red().bold());
@@ -28,46 +35,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
     println!();
 
-    // Initialize HSM with optional performance tracking
-    println!("{} Initializing Virtual HSM...", "→".cyan());
-    let mut hsm = VirtualHSM::with_performance(ECU_NAME.to_string(), HSM_SEED, perf_mode);
+    // =========================================================================
+    // Boot-time security (local HSM for secure boot)
+    // =========================================================================
+    println!("{} Performing secure boot sequence...", "→".cyan());
 
-    // Register trusted ECU (autonomous controller)
-    println!("{} Registering trusted ECUs...", "→".cyan());
-    let autonomous_hsm = VirtualHSM::new("AUTONOMOUS_CTRL".to_string(), 0x2001);
-    hsm.add_trusted_ecu(
-        "AUTONOMOUS_CTRL".to_string(),
-        *autonomous_hsm.get_symmetric_key(),
-    );
-    println!("  ✓ Registered AUTONOMOUS_CTRL");
-
-    // Load anomaly detection baseline if available
-    let baseline_path = "baseline_brake_ctrl.json";
-    if std::path::Path::new(baseline_path).exists() {
-        println!("{} Loading anomaly detection baseline...", "→".cyan());
-        match baseline_persistence::load_baseline(baseline_path, &hsm) {
-            Ok(baseline) => {
-                hsm.load_anomaly_baseline(baseline)?;
-                println!("{} Anomaly-based IDS enabled", "✓".green().bold());
-            }
-            Err(e) => {
-                println!("{} Failed to load baseline: {}", "⚠️".yellow(), e);
-                println!("   → Continuing without anomaly detection");
-            }
-        }
-    } else {
-        println!(
-            "{} No anomaly baseline found at {}",
-            "ℹ".bright_blue(),
-            baseline_path
-        );
-        println!("   → Run calibration tool to generate baseline");
-        println!("   → Continuing without anomaly detection");
-    }
-    println!();
+    // Use local HSM for boot-time operations (firmware signing, secure boot)
+    let boot_hsm = VirtualHSM::new(ECU_NAME.to_string(), HSM_SEED);
 
     // Initialize protected memory
-    println!("{} Initializing protected memory...", "→".cyan());
     let mut protected_mem = ProtectedMemory::new(ECU_NAME.to_string());
 
     // Create and provision firmware
@@ -76,17 +52,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         firmware_code.to_vec(),
         "1.0.0".to_string(),
         ECU_NAME.to_string(),
-        &hsm,
+        &boot_hsm,
     );
 
     protected_mem
-        .provision_firmware(firmware, &hsm)
+        .provision_firmware(firmware, &boot_hsm)
         .expect("Failed to provision firmware");
 
     // Perform secure boot
-    println!("{} Performing secure boot...", "→".cyan());
-    protected_mem.secure_boot(&hsm).expect("Secure boot failed");
+    protected_mem
+        .secure_boot(&boot_hsm)
+        .expect("Secure boot failed");
+    println!("{} Secure boot completed", "✓".green().bold());
 
+    // =========================================================================
+    // Runtime security (HsmClient for CAN operations)
+    // =========================================================================
+    println!("{} Connecting to HSM service...", "→".cyan());
+
+    // Connect to centralized HSM service on Core 3
+    let hsm_client = HsmClient::connect(ECU_NAME.to_string(), HSM_SOCKET_PATH).await?;
+    println!(
+        "{} Connected to HSM service ({})",
+        "✓".green().bold(),
+        HSM_SOCKET_PATH
+    );
+    println!();
+
+    // =========================================================================
+    // CAN bus connection
+    // =========================================================================
     println!("{} Connecting to CAN bus at {}...", "→".cyan(), BUS_ADDRESS);
     let client = BusClient::connect(BUS_ADDRESS, ECU_NAME.to_string()).await?;
     println!("{} Connected to CAN bus!", "✓".green().bold());
@@ -121,8 +116,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Channel for communication
     let (frame_tx, mut frame_rx) = mpsc::channel::<SecuredCanFrame>(100);
 
-    // Clone HSM and attack detector for receiver task
-    let mut hsm_clone = hsm.clone();
+    // Clone hsm_client and attack detector for receiver task
+    let hsm_client_clone = hsm_client.clone();
     let detector_clone = Arc::clone(&attack_detector);
 
     // Spawn receiver task with MAC/CRC verification and attack detection
@@ -143,8 +138,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             continue;
                         }
 
-                        // Verify MAC and CRC for frames we care about
-                        match secured_frame.verify(&mut hsm_clone) {
+                        // Verify MAC and CRC via HSM service
+                        match hsm_client_clone.verify_frame(&secured_frame).await {
                             Ok(_) => {
                                 // Successful verification - reset error counters
                                 {
@@ -152,50 +147,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                     detector.record_success();
                                 } // Lock is dropped here
 
-                                // Anomaly detection (after successful MAC/CRC verification)
-                                let anomaly_result = hsm_clone.detect_anomaly(&secured_frame);
-                                match anomaly_result {
-                                    AnomalyResult::Normal => {
-                                        // No anomaly - process frame normally
-                                        if frame_tx.send(secured_frame).await.is_err() {
-                                            break;
-                                        }
-                                    }
-                                    AnomalyResult::Warning(report) => {
-                                        // Medium severity (80-99% confidence)
-                                        println!(
-                                            "{} {} ({}σ)",
-                                            "⚠️".yellow(),
-                                            "ANOMALY WARNING".yellow().bold(),
-                                            report.confidence_sigma
-                                        );
-                                        println!("   • {}", report.anomaly_type);
-
-                                        // Still process frame but log warning
-                                        if frame_tx.send(secured_frame).await.is_err() {
-                                            break;
-                                        }
-                                    }
-                                    AnomalyResult::Attack(report) => {
-                                        // High severity (>99% confidence) - reject frame
-                                        let should_continue = {
-                                            let mut detector = detector_clone.lock().unwrap();
-                                            detector.record_error(
-                                                ValidationError::AnomalyDetected(
-                                                    report.to_string(),
-                                                ),
-                                                &secured_frame.source,
-                                            )
-                                        };
-
-                                        if !should_continue {
-                                            println!(
-                                                "{} Frame rejected - anomaly attack detected",
-                                                "✗".red()
-                                            );
-                                        }
-                                        // Don't process the frame
-                                    }
+                                // Process frame normally (anomaly detection handled in HSM service)
+                                if frame_tx.send(secured_frame).await.is_err() {
+                                    break;
                                 }
                             }
                             Err(e) => {
@@ -240,14 +194,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let mut current_brake_pressure = 0.0f32;
 
-    // Setup Ctrl+C handler for clean shutdown with performance stats
-    let hsm_perf_clone = hsm.clone();
+    // Setup Ctrl+C handler for clean shutdown
     tokio::spawn(async move {
         tokio::signal::ctrl_c()
             .await
             .expect("Failed to listen for Ctrl+C");
         println!("\n{} Shutting down...", "→".yellow());
-        hsm_perf_clone.print_performance_stats();
         std::process::exit(0);
     });
 

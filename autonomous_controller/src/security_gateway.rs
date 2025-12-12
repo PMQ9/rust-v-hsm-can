@@ -264,7 +264,7 @@ pub fn build_automotive_gateway() -> SecurityGatewayConfig {
     gateway.register_ecu("STEER_SENSOR".to_string(), SecurityZone::Chassis);
 
     // ADAS zone
-    gateway.register_ecu("AUTONOMOUS_CTRL".to_string(), SecurityZone::Adas);
+    gateway.register_ecu("AUTONOMOUS_CONTROLLER".to_string(), SecurityZone::Adas);
 
     // Define routing rules
 
@@ -487,7 +487,7 @@ mod tests {
 
         // ADAS can send brake commands to chassis
         let action = gateway.check_routing(
-            "AUTONOMOUS_CTRL",
+            "AUTONOMOUS_CONTROLLER",
             SecurityZone::Chassis,
             CanId::Standard(0x300),
         );

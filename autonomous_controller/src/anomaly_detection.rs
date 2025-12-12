@@ -246,7 +246,7 @@ impl AnomalyBaseline {
 }
 
 /// Anomaly detection result
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AnomalyResult {
     /// No anomaly detected
     Normal,
@@ -259,7 +259,7 @@ pub enum AnomalyResult {
 }
 
 /// Detailed anomaly report
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AnomalyReport {
     pub can_id: u32,
     pub source: String,
@@ -280,7 +280,7 @@ impl fmt::Display for AnomalyReport {
 }
 
 /// Types of anomalies
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AnomalyType {
     /// Message arrived too fast or too slow
     IntervalAnomaly { expected_ms: f64, actual_ms: f64 },
@@ -346,7 +346,7 @@ impl fmt::Display for AnomalyType {
 }
 
 /// Anomaly severity levels
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum AnomalySeverity {
     Low,    // < warning threshold
     Medium, // >= warning threshold, < detection threshold

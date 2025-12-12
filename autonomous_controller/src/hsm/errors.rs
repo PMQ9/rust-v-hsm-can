@@ -1,8 +1,9 @@
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Reasons why MAC verification can fail
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MacFailureReason {
     /// No MAC verification key registered for the source ECU
     NoKeyRegistered,
@@ -20,7 +21,7 @@ impl fmt::Display for MacFailureReason {
 }
 
 /// Replay detection errors
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReplayError {
     /// Counter was already seen in sliding window
     CounterAlreadySeen { counter: u64 },
@@ -95,7 +96,7 @@ impl fmt::Display for ReplayError {
 }
 
 /// Structured verification error types
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VerifyError {
     /// Frame has no MAC/CRC (all zeros) - indicates unsecured/injected frame
     UnsecuredFrame,
@@ -107,6 +108,8 @@ pub enum VerifyError {
     UnauthorizedAccess,
     /// Replay attack detected - frame counter invalid
     ReplayDetected(ReplayError),
+    /// Generic error for IPC/communication failures (HsmClient)
+    Other(String),
 }
 
 impl fmt::Display for VerifyError {
@@ -117,6 +120,7 @@ impl fmt::Display for VerifyError {
             VerifyError::MacMismatch(reason) => write!(f, "MAC verification failed: {}", reason),
             VerifyError::UnauthorizedAccess => write!(f, "Unauthorized CAN ID access"),
             VerifyError::ReplayDetected(reason) => write!(f, "Replay attack detected: {}", reason),
+            VerifyError::Other(msg) => write!(f, "Other error: {}", msg),
         }
     }
 }
